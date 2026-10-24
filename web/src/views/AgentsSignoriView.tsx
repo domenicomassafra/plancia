@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
+  AdapterError,
   adapterMessage,
   attachHermesSession,
   getHermesMessages,
@@ -19,6 +20,13 @@ type Load<T> = { state: "loading" } | { state: "error"; message: string }
 
 function StateNotice({ message }: { message: string }) {
   return <p role="status" className="rounded-xl border border-ink-700 bg-ink-900 px-4 py-5 text-sm text-ink-300">{message}</p>;
+}
+
+function hermesWriteMessage(error: unknown): string {
+  if (error instanceof AdapterError) return adapterMessage(error);
+  if (error instanceof TypeError) return "Servizio Hermes non raggiungibile.";
+  if (error instanceof Error && error.message.trim()) return error.message.slice(0, 240);
+  return "Errore durante la comunicazione con Hermes.";
 }
 
 /** Only mounted on a server-granted pre-existing session. Parent retains uncertain nonce across a list refresh. */
@@ -44,7 +52,7 @@ function HermesComposer({ profile, session, pending, onPendingChange, onReadback
       onReadback();
     } catch (error: unknown) {
       setLease(null);
-      setFeedback(`Impossibile connettere: ${adapterMessage(error)}`);
+      setFeedback(`Impossibile connettere: ${hermesWriteMessage(error)}`);
     } finally {
       setBusy(false);
     }
@@ -76,7 +84,7 @@ function HermesComposer({ profile, session, pending, onPendingChange, onReadback
     } catch (error: unknown) {
       // The original native admission may have succeeded even when HTTP failed.
       // Never generate a new nonce for an uncertain retry.
-      setFeedback(`Esito dell'invio incerto: ${adapterMessage(error)}. Rileggi la sessione; «Riprova stesso invio» usa il nonce originale.`);
+      setFeedback(`Esito dell'invio incerto: ${hermesWriteMessage(error)}. Rileggi la sessione; «Riprova stesso invio» usa il nonce originale.`);
     } finally {
       setBusy(false);
     }

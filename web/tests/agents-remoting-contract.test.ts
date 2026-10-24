@@ -10,6 +10,7 @@ import {
   sendHermesPrompt,
   type HermesProfile,
 } from "../src/lib/agents-remoting.ts";
+import { canUseHermesInput, createHermesAttempt, sameHermesLease } from "../src/lib/hermes-input-flow.ts";
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -18,6 +19,31 @@ const writableProfile: HermesProfile = {
   capabilities: { readable: true, attachable: true, sendable: true },
 };
 const existingSession = { id: "existing_1", title: null, updated_at: null };
+
+test("a browser composer needs both explicit native grants on the original running gateway", () => {
+  assert.equal(canUseHermesInput(writableProfile, existingSession), true);
+  assert.equal(canUseHermesInput({ ...writableProfile,
+    capabilities: { ...writableProfile.capabilities, sendable: false } }, existingSession), false);
+  assert.equal(canUseHermesInput({ ...writableProfile,
+    capabilities: { ...writableProfile.capabilities, attachable: false } }, existingSession), false);
+  assert.equal(canUseHermesInput({ ...writableProfile,
+    capabilities: { ...writableProfile.capabilities, readable: false } }, existingSession), false);
+  assert.equal(canUseHermesInput({ ...writableProfile, gateway: "stopped" }, existingSession), false);
+  assert.equal(canUseHermesInput(writableProfile, null), false);
+});
+
+test("uncertain native input reuses the same nonce and refuses replay against a different gateway", () => {
+  const lease = { profileId: writableProfile.id, sessionId: existingSession.id,
+    instanceId: "native-instance-001", authorityEpoch: 12 };
+  const attempt = createHermesAttempt(lease, "synthetic nonce", () => "nonce_12345678");
+  assert.deepEqual(attempt, { lease, nonce: "nonce_12345678", text: "synthetic nonce" });
+  assert.equal(sameHermesLease(attempt.lease, { ...lease }), true);
+  assert.equal(sameHermesLease(attempt.lease, { ...lease, authorityEpoch: 13 }), false);
+  assert.equal(sameHermesLease(attempt.lease, { ...lease, instanceId: "other-gateway" }), false);
+  assert.equal(sameHermesLease(attempt.lease, { ...lease, sessionId: "another-session" }), false);
+  assert.throws(() => createHermesAttempt(lease, "  ", () => "nonce_12345678"));
+  assert.throws(() => createHermesAttempt(lease, "test", () => "short"));
+});
 
 test("native attach binds existing profile, session and original gateway, without starting a process", async () => {
   const calls: { path: string; init: RequestInit }[] = [];

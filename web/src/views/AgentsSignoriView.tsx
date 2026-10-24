@@ -1,19 +1,115 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
+  AdapterError,
   adapterMessage,
+  attachHermesSession,
   getHermesMessages,
   getHermesProfiles,
   getHermesSessions,
+  sendHermesPrompt,
+  type HermesLease,
   type HermesMessage,
   type HermesProfile,
   type HermesSession,
 } from "../lib/agents-remoting";
+import { request } from "../lib/api";
+import { canUseHermesInput, createHermesAttempt, sameHermesLease, type HermesAttempt } from "../lib/hermes-input-flow";
 
 type Load<T> = { state: "loading" } | { state: "error"; message: string }
   | { state: "ready"; data: T };
 
 function StateNotice({ message }: { message: string }) {
   return <p role="status" className="rounded-xl border border-ink-700 bg-ink-900 px-4 py-5 text-sm text-ink-300">{message}</p>;
+}
+
+function hermesWriteMessage(error: unknown): string {
+  if (error instanceof AdapterError) return adapterMessage(error);
+  if (error instanceof TypeError) return "Servizio Hermes non raggiungibile.";
+  if (error instanceof Error && error.message.trim()) return error.message.slice(0, 240);
+  return "Errore durante la comunicazione con Hermes.";
+}
+
+/** Only mounted on a server-granted pre-existing session. Parent retains uncertain nonce across a list refresh. */
+function HermesComposer({ profile, session, pending, onPendingChange, onReadback }: {
+  profile: HermesProfile; session: HermesSession; pending: HermesAttempt | null;
+  onPendingChange: (attempt: HermesAttempt | null) => void; onReadback: () => void;
+}) {
+  const [lease, setLease] = useState<HermesLease | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("Connetti al gateway nativo per scrivere nella sessione esistente.");
+  const enabled = canUseHermesInput(profile, session);
+
+  async function connect() {
+    if (!enabled || busy) return;
+    setBusy(true);
+    try {
+      const next = await attachHermesSession(profile, session, request);
+      setLease(next);
+      setFeedback(pending && !sameHermesLease(pending.lease, next)
+        ? "Il gateway è cambiato. Il precedente invio ha esito incerto: controlla il readback prima di ogni nuovo invio."
+        : "Connessione alla sessione nativa verificata. Nessuna nuova sessione creata.");
+      onReadback();
+    } catch (error: unknown) {
+      setLease(null);
+      setFeedback(`Impossibile connettere: ${hermesWriteMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!enabled || !lease || busy) return;
+    if (pending && !sameHermesLease(pending.lease, lease)) {
+      setFeedback("Gateway o sessione cambiati: riconcilia l'invio incerto dal readback prima di proseguire.");
+      return;
+    }
+    let attempt: HermesAttempt;
+    try {
+      attempt = pending ?? createHermesAttempt(lease, draft);
+    } catch (error: unknown) {
+      setFeedback(error instanceof Error ? error.message : "Messaggio non valido");
+      return;
+    }
+    onPendingChange(attempt);
+    setBusy(true);
+    try {
+      const receipt = await sendHermesPrompt(attempt.lease, profile.capabilities,
+        attempt.nonce, attempt.text, request);
+      onPendingChange(null);
+      setDraft("");
+      setFeedback(`Il gateway nativo ha registrato l'invio (${receipt.status}). Aggiorna il readback per controllarne l'esito.`);
+      onReadback();
+    } catch (error: unknown) {
+      // The original native admission may have succeeded even when HTTP failed.
+      // Never generate a new nonce for an uncertain retry.
+      setFeedback(`Esito dell'invio incerto: ${hermesWriteMessage(error)}. Rileggi la sessione; «Riprova stesso invio» usa il nonce originale.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="space-y-3" aria-label="Invio nella sessione Hermes esistente">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => void connect()} disabled={busy || !enabled}
+          className="button-secondary min-h-11">{lease ? "Riconnetti alla stessa sessione" : "Connetti alla sessione"}</button>
+        <button type="button" onClick={onReadback} className="button-secondary min-h-11">Rileggi cronologia</button>
+        <span className="text-xs text-ink-400">{lease ? `Gateway ${lease.instanceId} · epoch ${lease.authorityEpoch}` : "Nessun attach interattivo"}</span>
+      </div>
+      <label htmlFor="hermes-composer" className="sr-only">Messaggio Hermes</label>
+      <textarea id="hermes-composer" rows={2} maxLength={4096} value={pending?.text ?? draft}
+        onChange={(event) => setDraft(event.target.value)} readOnly={Boolean(pending)}
+        disabled={!enabled || !lease || busy} placeholder="Scrivi nella sessione nativa esistente"
+        className="w-full resize-none rounded-xl border border-ink-700 bg-ink-950 p-3 text-sm text-ink-100 disabled:cursor-not-allowed disabled:text-ink-400" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="text-xs leading-5 text-ink-400">{feedback}</p>
+        <button type="submit" disabled={!enabled || !lease || busy || (!pending && !draft.trim())}
+          className="button-secondary min-h-11">{pending ? "Riprova stesso invio" : "Invia a Hermes"}</button>
+      </div>
+    </form>
+  );
 }
 
 export function AgentsSignoriView() {
@@ -23,6 +119,8 @@ export function AgentsSignoriView() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Load<HermesSession[]>>({ state: "loading" });
   const [messages, setMessages] = useState<Load<HermesMessage[]>>({ state: "loading" });
+  const [readbackRefresh, setReadbackRefresh] = useState(0);
+  const [attempts, setAttempts] = useState<Record<string, HermesAttempt>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,7 +163,7 @@ export function AgentsSignoriView() {
         if (!controller.signal.aborted) setMessages({ state: "error", message: adapterMessage(error) });
       });
     return () => controller.abort();
-  }, [profileId, sessionId, canRead, sessions, refresh]);
+  }, [profileId, sessionId, canRead, sessions, refresh, readbackRefresh]);
 
   const selectProfile = (id: string) => {
     setProfileId(id);
@@ -82,6 +180,18 @@ export function AgentsSignoriView() {
     setSessions({ state: "loading" });
     setMessages({ state: "loading" });
     setRefresh((previous) => previous + 1);
+  };
+  const selectedSession = sessions.state === "ready"
+    ? sessions.data.find((session) => session.id === sessionId) : undefined;
+  const selectedKey = selectedProfile && selectedSession ? `${selectedProfile.id}/${selectedSession.id}` : "";
+  const rememberAttempt = (attempt: HermesAttempt | null) => {
+    if (!selectedKey) return;
+    setAttempts((previous) => {
+      const next = { ...previous };
+      if (attempt) next[selectedKey] = attempt;
+      else delete next[selectedKey];
+      return next;
+    });
   };
 
   return (
@@ -157,10 +267,17 @@ export function AgentsSignoriView() {
               </ol>}
             </div>
             <footer className="border-t border-ink-700 p-4">
-              <label htmlFor="hermes-composer" className="sr-only">Messaggio Hermes</label>
-              <textarea id="hermes-composer" disabled rows={2} placeholder="Invio non disponibile: il backend non ha ancora verificato il reattach alla stessa sessione"
-                className="w-full resize-none rounded-xl border border-ink-700 bg-ink-950 p-3 text-sm text-ink-400 disabled:cursor-not-allowed" />
-              <p className="mt-2 text-xs leading-5 text-ink-400">Allegati, streaming e tool interattivi richiedono il trasporto Hermes originale con permesso di invio. Questo pannello mostra solo l'export redatto.</p>
+              {selectedProfile && selectedSession && canUseHermesInput(selectedProfile, selectedSession)
+                ? <HermesComposer key={`${selectedProfile.id}/${selectedSession.id}`} profile={selectedProfile}
+                    session={selectedSession} pending={attempts[selectedKey] ?? null}
+                    onPendingChange={rememberAttempt} onReadback={() => setReadbackRefresh((value) => value + 1)} />
+                : <>
+                    <label htmlFor="hermes-composer" className="sr-only">Messaggio Hermes</label>
+                    <textarea id="hermes-composer" disabled rows={2}
+                      placeholder="Invio non disponibile: il backend non ha ancora autorizzato attach e send nativi"
+                      className="w-full resize-none rounded-xl border border-ink-700 bg-ink-950 p-3 text-sm text-ink-400 disabled:cursor-not-allowed" />
+                  </>}
+              <p className="mt-2 text-xs leading-5 text-ink-400">Cronologia redatta da Hermes. Allegati, streaming e tool interattivi non sono disponibili in questo pannello.</p>
             </footer>
           </section>
         </div>

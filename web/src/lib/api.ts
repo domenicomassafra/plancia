@@ -75,18 +75,31 @@ export async function request<T>(path: string, init?: RequestInit, retrySession 
 const PROFILE_CACHE_TTL_MS = 45_000;
 let profileCache: { fleet: ProfileFleet; fetchedAt: number } | null = null;
 let profileRequest: Promise<ProfileFleet> | null = null;
+let profileRequestRefresh = false;
+let profileRevision = 0;
+let profileRequestRevision = 0;
 
 function profiles(refresh = false): Promise<ProfileFleet> {
   const now = Date.now();
   if (!refresh && profileCache && now - profileCache.fetchedAt < PROFILE_CACHE_TTL_MS) return Promise.resolve(profileCache.fleet);
-  if (profileRequest) return profileRequest;
+  if (profileRequest) {
+    if (profileRequestRevision === profileRevision && (!refresh || profileRequestRefresh)) return profileRequest;
+    // An ordinary or invalidated in-flight load cannot satisfy a newer refresh.
+    return profileRequest.then(() => profiles(refresh), () => profiles(refresh));
+  }
+  const revision = profileRevision;
+  profileRequestRevision = revision;
+  profileRequestRefresh = refresh;
   const pending = request<ProfileFleet>(`/api/profiles${refresh ? "?refresh=true" : ""}`)
     .then((fleet) => {
-      profileCache = { fleet, fetchedAt: Date.now() };
+      if (revision === profileRevision) profileCache = { fleet, fetchedAt: Date.now() };
       return fleet;
     })
     .finally(() => {
-      if (profileRequest === pending) profileRequest = null;
+      if (profileRequest === pending) {
+        profileRequest = null;
+        profileRequestRefresh = false;
+      }
     });
   profileRequest = pending;
   return pending;
@@ -114,6 +127,7 @@ export const api = {
   profiles,
   invalidateProfiles: () => {
     profileCache = null;
+    profileRevision += 1;
   },
   openProfile: (hostId: string, browser: string, email: string, directory: string) =>
     request<{ ok: boolean; error_code?: string; receipt_id?: string }>("/api/profiles/open", {
@@ -337,12 +351,13 @@ export function subscribeFleet(
     onStatus("polling");
     const tick = async () => {
       try {
-        onSnapshot(await api.fleet());
-        // A delivering poll is live degraded mode: never leave the operator
-        // with a stale "offline" badge after a transient failure recovers.
-        if (!socketOpen) onStatus("polling");
+        const snapshot = await api.fleet();
+        // The polling reply may outlive an unsubscribe or a WebSocket reconnect.
+        if (closed || socketOpen) return;
+        onSnapshot(snapshot);
+        onStatus("polling");
       } catch {
-        if (!socketOpen) onStatus("offline");
+        if (!closed && !socketOpen) onStatus("offline");
       }
     };
     void tick();

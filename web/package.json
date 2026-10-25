@@ -20,7 +20,7 @@
     "test:omniroute": "node --experimental-strip-types --test tests/omniroute-refresh.test.ts",
     "test:action-item-operation": "tsc --noEmit --strict --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution bundler --skipLibCheck --isolatedModules --verbatimModuleSyntax tests/action-item-operation.test.ts",
     "test:workspace-input": "node --test tests/workspace-input.test.mjs && node --experimental-strip-types --test tests/notion-dates.test.ts",
-    "test:profile-groups": "node --experimental-strip-types tests/profile-groups.test.ts",
+    "test:profile-groups": "node --experimental-strip-types tests/profile-groups.test.ts && node --experimental-strip-types --test tests/profile-refresh.test.ts",
     "test:format": "node --experimental-strip-types tests/format.test.ts",
     "test:obsidian": "node --experimental-strip-types --test tests/obsidian-model.test.ts && node --test tests/obsidian-render.test.mjs",
     "test:agents-remoting": "node --experimental-strip-types --test tests/agents-remoting-contract.test.ts"

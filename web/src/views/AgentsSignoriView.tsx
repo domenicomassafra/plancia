@@ -77,9 +77,13 @@ function HermesComposer({ profile, session, pending, onPendingChange, onReadback
     try {
       const receipt = await sendHermesPrompt(attempt.lease, profile.capabilities,
         attempt.nonce, attempt.text, request);
-      onPendingChange(null);
-      setDraft("");
-      setFeedback(`Il gateway nativo ha registrato l'invio (${receipt.status}). Aggiorna il readback per controllarne l'esito.`);
+      if (receipt.status === "unknown") {
+        setFeedback("Esito incerto: il gateway non ha confermato il turno. Rileggi la sessione; «Riprova stesso invio» conserva il nonce originale.");
+      } else {
+        onPendingChange(null);
+        setDraft("");
+        setFeedback(`Il gateway nativo ha registrato l'invio (${receipt.status}). Aggiorna il readback per controllarne l'esito.`);
+      }
       onReadback();
     } catch (error: unknown) {
       // The original native admission may have succeeded even when HTTP failed.

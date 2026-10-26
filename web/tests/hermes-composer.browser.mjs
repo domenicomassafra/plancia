@@ -9,6 +9,7 @@ test("Hermes browser grants, single submit, error and stable explicit retry", as
   assert.ok(cdp, "PLANCIA_CDP must point to the dedicated automation browser");
   let grant = false;
   let rejectNextSend = false;
+  let nextStatus = null;
   const writes = [];
   const reads = [];
   const lease = { source: "hermes-native", profile_id: "signor-coding",
@@ -59,7 +60,9 @@ test("Hermes browser grants, single submit, error and stable explicit retry", as
             rejectNextSend = false;
             return respond(res, { detail: "Gateway non disponibile per questa sessione" }, 409);
           }
-          return respond(res, { ...lease, admission_id: "admit_fixture_1", status: "queued" });
+          const status = nextStatus ?? "queued";
+          nextStatus = null;
+          return respond(res, { ...lease, admission_id: "admit_fixture_1", status });
         });
       },
     }],
@@ -145,10 +148,23 @@ test("Hermes browser grants, single submit, error and stable explicit retry", as
     await wait("document.body.textContent.includes('registrato')");
     assert.deepEqual(writes[4].body, uncertain.body, "retry must preserve SID, text, nonce, epoch");
     assert.ok(reads.some((path) => path.endsWith("/messages")), "readback must use existing SID");
+    nextStatus = "unknown";
+    await fill("ambiguous receipt synthetic");
+    await wait("Array.from(document.querySelectorAll(\"button\")).some(e=>e.textContent===\"Invia a Hermes\"&&!e.disabled)");
+    await click("Invia a Hermes");
+    await wait("document.body.textContent.includes(\"Esito incerto\")");
+    const ambiguous = writes[5];
+    await click("Aggiorna");
+    await wait("Array.from(document.querySelectorAll(\"button\")).some(e=>e.textContent===\"Connetti alla sessione\")");
+    await click("Connetti alla sessione");
+    await wait("Array.from(document.querySelectorAll(\"button\")).some(e=>e.textContent===\"Riprova stesso invio\")");
+    await click("Riprova stesso invio");
+    await wait("document.body.textContent.includes(\"registrato\")");
+    assert.deepEqual(writes[7].body, ambiguous.body, "unknown receipt must preserve same nonce and text across reconnect");
     grant = false;
     await click("Aggiorna");
     await wait("document.querySelector('textarea')?.disabled");
-    assert.equal(writes.length, 5);
+    assert.equal(writes.length, 8);
   } finally {
     ws?.close();
     if (target?.id) await fetch(`${process.env.PLANCIA_CDP}/json/close/${target.id}`);

@@ -11,7 +11,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "deploy" / "prepare-release-runti
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="runtime Node is required for external frontend attestation")
-@pytest.mark.parametrize("tamper", [None, "asset", "source", "checker"])
+@pytest.mark.parametrize("tamper", [None, "asset", "source", "checker", "optimized-source"])
 def test_external_frontend_requires_pinned_source_checker_and_exact_build(tmp_path, tamper):
     root = _release_fixture(tmp_path)
     revision = "a" * 40
@@ -26,11 +26,12 @@ def test_external_frontend_requires_pinned_source_checker_and_exact_build(tmp_pa
     (root / "FRONTEND_ASSETS.txt").write_text(hashlib.sha256(asset.read_bytes()).hexdigest() + "\n")
     if tamper == "asset":
         asset.write_text("console.log('different build')\n")
-    elif tamper == "source":
+    elif tamper in {"source", "optimized-source"}:
         (root / "FRONTEND_SOURCE_SHA").write_text("b" * 40)
     elif tamper == "checker":
         (root / "frontend-check.mjs").write_text("console.log('untrusted checker')")
-    result = _check(root)
+    env = {**os.environ, "PYTHONOPTIMIZE": "1"} if tamper == "optimized-source" else None
+    result = _check(root, env=env)
     assert (result.returncode == 0) is (tamper is None), result.stderr
 
 
@@ -74,10 +75,11 @@ def _release_fixture(tmp_path: Path, *, with_index: bool = True, with_asset: boo
     return root
 
 
-def _check(root: Path) -> subprocess.CompletedProcess[str]:
+def _check(root: Path, *, env=None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(root / "deploy" / SCRIPT.name), "--check"],
         cwd=root,
+        env=env,
         text=True,
         capture_output=True,
         check=False,

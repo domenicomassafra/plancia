@@ -60,8 +60,10 @@ import hashlib, json, pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 source = json.loads((root / "frontend.json").read_text())
 revision = (root / "FRONTEND_SOURCE_SHA").read_text().strip()
-assert re.fullmatch(r"[0-9a-f]{40}", revision) and revision == source["revision"], "frontend source mismatch"
-assert hashlib.sha256((root / "frontend-check.mjs").read_bytes()).hexdigest() == source["checker_sha256"], "frontend checker mismatch"
+if not re.fullmatch(r"[0-9a-f]{40}", revision) or revision != source["revision"]:
+    raise ValueError("frontend source mismatch")
+if hashlib.sha256((root / "frontend-check.mjs").read_bytes()).hexdigest() != source["checker_sha256"]:
+    raise ValueError("frontend checker mismatch")
 print(revision)
 PY
   ) || { echo "frontend source/checker verification failed" >&2; exit 67; }

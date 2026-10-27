@@ -1,4 +1,18 @@
 from workspace_api_test_support import *
+import pytest
+from backend.fleet2 import workspace_sources
+
+
+@pytest.fixture(autouse=True)
+def synthetic_primary_notion_role(monkeypatch):
+    """Operation regression tests never depend on a personal vault role file."""
+    monkeypatch.setattr(workspace_sources, "primary_notion_role", lambda: {
+        "workspace_id": "primary-id",
+        "registry_data_source_id": "registry-id",
+        "expected_names": ["Domenico"],
+        "profile_env": {"NOTION_PROFILE": "primary"},
+        "operational_data_sources": {"actions": ACTIONS_ID},
+    })
 
 def test_public_receipt_projection_never_exposes_operation_bodies():
     projected = _public_receipt(

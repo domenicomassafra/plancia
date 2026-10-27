@@ -31,7 +31,7 @@ class RuntimeConfigTests(unittest.TestCase):
 
             self.assertEqual(
                 config.state_root,
-                Path.home() / ".local/state/controlcenter/dashboard-state",
+                (Path.home() / ".local/state/controlcenter/dashboard-state").resolve(),
             )
             self.assertEqual(
                 config.database_path,
@@ -44,7 +44,7 @@ class RuntimeConfigTests(unittest.TestCase):
             config = RuntimeConfig.from_env({"XDG_STATE_HOME": override})
             self.assertEqual(config.state_root, (Path(override) / "controlcenter/dashboard-state").resolve())
             fallback = RuntimeConfig.from_env({"XDG_STATE_HOME": "relative"})
-            self.assertEqual(fallback.state_root, Path.home() / ".local/state/controlcenter/dashboard-state")
+            self.assertEqual(fallback.state_root, (Path.home() / ".local/state/controlcenter/dashboard-state").resolve())
 
     def test_env_override_must_not_point_into_synced_controlcenter(self):
         with tempfile.TemporaryDirectory() as temp:

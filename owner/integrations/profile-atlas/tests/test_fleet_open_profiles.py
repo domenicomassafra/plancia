@@ -55,6 +55,7 @@ class OpenProfileTests(unittest.TestCase):
                     return_value="/bin/browser",
                 ),
                 patch("chrome_profile_launcher.fleet.subprocess.Popen") as popen,
+                patch("chrome_profile_launcher.fleet._browser_process_environment", return_value={}),
                 patch(
                     "chrome_profile_launcher.fleet._active_browser_processes",
                     return_value=["Microsoft Edge"],
@@ -92,6 +93,7 @@ class OpenProfileTests(unittest.TestCase):
                     return_value="/bin/browser",
                 ),
                 patch("chrome_profile_launcher.fleet.subprocess.Popen"),
+                patch("chrome_profile_launcher.fleet._browser_process_environment", return_value={}),
                 patch(
                     "chrome_profile_launcher.fleet._active_browser_processes",
                     return_value=[],

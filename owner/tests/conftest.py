@@ -19,7 +19,7 @@ def web_index_for_backend_tests(tmp_path_factory: pytest.TempPathFactory):
 
     test_dist = tmp_path_factory.mktemp("web-test-dist")
     (test_dist / "index.html").write_text(
-        '<!doctype html><html><head><title>Signal Deck test</title></head>'
+        '<!doctype html><html><head><title>Plancia test</title></head>'
         '<body><div id="root"></div></body></html>',
         encoding="utf-8",
     )

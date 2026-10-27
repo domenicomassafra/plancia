@@ -9,7 +9,6 @@ Repository pubblico domenicomassafra/plancia
     src/components/   componenti di dominio
     src/lib/api.ts    client browser same-origin, bootstrap sessione, CSRF
     src/lib/types.ts contratti dati ricevuti dal backend canonico
-  LICENSE, NOTICE, THIRD_PARTY_NOTICES.md — attribuzioni donor Muxin ritirato
         |
         | HTTPS stessa origine + /api, /api/v1, /api/stream
         v
@@ -21,6 +20,8 @@ ControlCenter (repository privato, proprietario esclusivo dei writer)
         +--> vault Obsidian tramite writer canonico/CAS
         +--> agenti e host tramite bridge/donor autorizzati
 ```
+
+Le attribuzioni storiche del donor Muxin ritirato sono conservate separatamente in `LICENSE`, `NOTICE` e `THIRD_PARTY_NOTICES.md`; non fanno parte del runtime web.
 
 **Cutover #20:** la release immutabile sul MiniPC combina l'artefatto frontend di Plancia con il backend ControlCenter. `ControlCenter/dashboard/frontend.json` vincola commit Plancia e digest del suo checker; il preflight verifica fonte e digest di ogni asset contro l'attestazione prodotta sul Mac Studio. I vecchi sorgenti `ControlCenter/dashboard/web/` e i relativi build nei workflow sono stati rimossi con [ControlCenter #511](https://github.com/domenicomassafra/controlcenter/pull/511). Release precedenti e ricevute di deploy restano disponibili per il rollback nativo; non sono fonti UI da modificare.
 

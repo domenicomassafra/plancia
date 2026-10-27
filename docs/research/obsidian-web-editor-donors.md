@@ -112,8 +112,7 @@ scripts/donors/vault-editor-donors.sh render       # tabella dal JSON
 scripts/donors/vault-editor-donors.sh check        # la tabella nel doc è aggiornata
 scripts/donors/vault-editor-donors.sh verify-live  # i commit pinnati esistono ancora upstream
 scripts/donors/vault-editor-donors.sh scan         # rilegge l'API GitHub e riscrive tabella+pin
-cargo test --workspace --locked --no-default-features --test donor_research
 ```
 
-`check` è offline e deterministico e fa parte dei test: la tabella non può divergere dal JSON
-senza far fallire `cargo test`. `scan` e `verify-live` richiedono `gh` autenticato.
+`check` è offline e deterministico e va eseguito per verificare la coerenza tra tabella e JSON.
+Il vecchio test Rust donor è stato ritirato con la distribuzione nativa (#60). `scan` e `verify-live` richiedono `gh` autenticato.

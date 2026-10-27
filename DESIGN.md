@@ -9,7 +9,7 @@ Repository pubblico domenicomassafra/plancia
     src/components/   componenti di dominio
     src/lib/api.ts    client browser same-origin, bootstrap sessione, CSRF
     src/lib/types.ts contratti dati ricevuti dal backend canonico
-  src/, agent/, share-server/ — donor legacy Muxin isolato (Apache-2.0)
+  LICENSE, NOTICE, THIRD_PARTY_NOTICES.md — attribuzioni donor Muxin ritirato
         |
         | HTTPS stessa origine + /api, /api/v1, /api/stream
         v

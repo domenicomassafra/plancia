@@ -134,6 +134,53 @@ def test_release_preflight_rejects_index_referencing_wrong_asset(tmp_path: Path)
 
 
 def test_release_preflight_accepts_built_web_bundle(tmp_path: Path) -> None:
-    result = _check(_release_fixture(tmp_path))
+    root = _release_fixture(tmp_path)
+    checker = (
+        "import{readFileSync}from'node:fs';import{createHash}from'node:crypto';"
+        "console.log(createHash('sha256').update(readFileSync(process.argv[process.argv.indexOf('--dist')+1]+'/assets/index-test.js')).digest('hex'));"
+    )
+    revision = "a" * 40
+    (root / "frontend.json").write_text(json.dumps({
+        "revision": revision, "checker_sha256": hashlib.sha256(checker.encode()).hexdigest(),
+    }))
+    (root / "frontend-check.mjs").write_text(checker)
+    (root / "FRONTEND_SOURCE_SHA").write_text(revision + "\n")
+    asset = root.parent / "web/dist/assets/index-test.js"
+    (root / "FRONTEND_ASSETS.txt").write_text(hashlib.sha256(asset.read_bytes()).hexdigest() + "\n")
+    result = _check(root)
     assert result.returncode == 0, result.stderr
     assert "release_preflight=ok" in result.stdout
+
+
+def test_native_release_without_binding_rejects_modified_js(tmp_path: Path) -> None:
+    root = _release_fixture(tmp_path)
+    (root.parent / "web/dist/assets/index-test.js").write_text("console.log('tampered')\n")
+    # Same native package that the migrated installer would create: the old
+    # ControlCenter frontend.json is no longer shipped.
+    result = _check(root)
+    assert result.returncode == 67, result.stderr
+    assert "frontend" in result.stderr.lower() or "attestation" in result.stderr.lower()
+
+
+def test_native_release_requires_pwa_assets_even_with_index_and_js(tmp_path: Path) -> None:
+    root = _release_fixture(tmp_path)
+    # A simple valid index is not a valid Plancia PWA.
+    result = _check(root)
+    assert result.returncode == 67, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node required for native PWA checker")
+def test_native_attestation_must_run_real_pwa_checker(tmp_path: Path) -> None:
+    root = _release_fixture(tmp_path)
+    checker_file = Path(__file__).resolve().parents[2] / "web/scripts/check-release.mjs"
+    checker = checker_file.read_bytes()
+    revision = "a" * 40
+    (root / "frontend.json").write_text(json.dumps({
+        "revision": revision, "checker_sha256": hashlib.sha256(checker).hexdigest(),
+    }))
+    shutil.copy2(checker_file, root / "frontend-check.mjs")
+    (root / "FRONTEND_SOURCE_SHA").write_text(revision + "\n")
+    (root / "FRONTEND_ASSETS.txt").write_text("synthetic-studio-asset-digest\n")
+    result = _check(root)
+    assert result.returncode == 67, result.stderr
+    assert "manifest" in result.stderr

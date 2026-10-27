@@ -51,8 +51,11 @@ if [[ ! -s "$requirements" ]]; then
   exit 66
 fi
 
-if [[ -f "$release_root/frontend.json" ]]; then
-  frontend_sha=$("$python_bin" - "$release_root" <<'PY'
+if [[ ! -s "$release_root/frontend.json" || ! -s "$release_root/FRONTEND_ASSETS.txt" || ! -s "$release_root/FRONTEND_SOURCE_SHA" || ! -s "$release_root/frontend-check.mjs" ]]; then
+  echo "missing frontend attestation: require frontend.json, FRONTEND_SOURCE_SHA, frontend-check.mjs and FRONTEND_ASSETS.txt" >&2
+  exit 67
+fi
+frontend_sha=$("$python_bin" - "$release_root" <<'PY'
 import hashlib, json, pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 source = json.loads((root / "frontend.json").read_text())
@@ -61,19 +64,18 @@ assert re.fullmatch(r"[0-9a-f]{40}", revision) and revision == source["revision"
 assert hashlib.sha256((root / "frontend-check.mjs").read_bytes()).hexdigest() == source["checker_sha256"], "frontend checker mismatch"
 print(revision)
 PY
-  )
-  frontend_check=$(mktemp)
-  if ! node "$release_root/frontend-check.mjs" --dist "$web_dist" --source-sha "$frontend_sha" > "$frontend_check"; then
-    rm -f "$frontend_check"
-    exit 67
-  fi
-  if ! cmp -s "$frontend_check" "$release_root/FRONTEND_ASSETS.txt"; then
-    rm -f "$frontend_check"
-    echo 'frontend artifact differs from its Mac Studio attestation' >&2
-    exit 67
-  fi
+  ) || { echo "frontend source/checker verification failed" >&2; exit 67; }
+frontend_check=$(mktemp)
+if ! node "$release_root/frontend-check.mjs" --dist "$web_dist" --source-sha "$frontend_sha" > "$frontend_check"; then
   rm -f "$frontend_check"
+  exit 67
 fi
+if ! cmp -s "$frontend_check" "$release_root/FRONTEND_ASSETS.txt"; then
+  rm -f "$frontend_check"
+  echo 'frontend artifact differs from its Mac Studio attestation' >&2
+  exit 67
+fi
+rm -f "$frontend_check"
 
 if $check_only; then
   echo "release_preflight=ok"

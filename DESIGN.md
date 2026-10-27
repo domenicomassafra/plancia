@@ -14,7 +14,7 @@ Repository pubblico domenicomassafra/plancia
     agent/           FleetProbe e installer multipiattaforma
     deploy/          unità Plancia, preflight e composizione release
     tests/           regressioni di auth, stato, storico, API e collector
-  src/, agent/, share-server/ — donor legacy Muxin isolato (Apache-2.0)
+  Donor Muxin ritirato (#60): storia e attribuzioni Apache-2.0 conservate
         |
         | un solo origin HTTPS autenticato; /api, /api/v1, /api/stream
         v
@@ -30,7 +30,7 @@ Runtime MiniPC
              fleet/policy/ per unità, orchestrazione e veridicità delle fonti
 ```
 
-**Cutover #919:** una singola revisione verificata di Plancia fornisce sia il backend `owner/` sia il bundle `web/dist/`. `web/scripts/check-release.mjs` controlla i file pubblicati e `owner/deploy/prepare-release-runtime.sh --check` verifica che siano realmente presenti prima di avviare il servizio. Le configurazioni private e gli storage non sono copiati nel Git pubblico. Il vecchio backend ControlCenter resta installato soltanto come rollback durante il passaggio, senza doppio processo sulla porta 8000. Il frontend era già stato estratto con [ControlCenter #511](https://github.com/domenicomassafra/controlcenter/pull/511).
+**Cutover #919:** una singola revisione verificata di Plancia fornisce sia il backend `owner/` sia il bundle `web/dist/`. `web/scripts/check-release.mjs` e i quattro file di attestazione generati sul Mac Studio (procedura in `owner/README.md`) vincolano SHA sorgente, checker e digest di ogni asset/PWA. `owner/deploy/prepare-release-runtime.sh --check` rifiuta un bundle privo di attestazione o differente prima del servizio. Le configurazioni private e gli storage non sono copiati nel Git pubblico. Il vecchio backend ControlCenter resta installato soltanto come rollback durante il passaggio, senza doppio processo sulla porta 8000. Il frontend era già stato estratto con [ControlCenter #511](https://github.com/domenicomassafra/controlcenter/pull/511).
 
 ## Contratto browser/API conservato
 

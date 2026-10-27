@@ -11,7 +11,9 @@ serves `../web/dist/` from the **same origin**.
 addresses. Production **must** set `PLANCIA_FLEET_CONFIG` to the installed,
 private host registry. The canonical inventory and host-local profile command
 paths are versioned in the private ControlCenter repository under
-`configs/plancia/` and are passed through the systemd unit's environment.
+`configs/plancia/` and are securely staged at `~/.config/plancia/` on MiniPC
+by ControlCenter's `tools/install-plancia-private-config.sh` before cutover.
+The systemd unit reads that private destination through its environment.
 `PLANCIA_PROFILE_COMMANDS_FILE` accepts an object mapping host IDs to absolute
 Profile Atlas executable paths; this file must remain private. The installed
 `FLEETPROBE_TOKEN_FILE`, owner auth environment, SQLite history and receipts stay
@@ -22,6 +24,8 @@ The proposed MiniPC systemd unit is `deploy/plancia-backend.service`, using
 Tailscale Serve proxy. Build and test the frontend on Mac Studio, copy its
 verified `web/dist/` alongside `owner/`, then run
 `owner/deploy/prepare-release-runtime.sh` on the immutable MiniPC release.
+Dependency environments are keyed by the requirements digest under
+`~/.local/share/plancia/owner-venvs`, separate from historical dashboard venvs.
 The unit runs with no independent vault or database writer. Retain the existing
 `controlcenter-fleet-dashboard` release as rollback material until the new unit
 passes authenticated browser, API and FleetProbe checks. After an independent

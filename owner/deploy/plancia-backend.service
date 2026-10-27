@@ -24,8 +24,8 @@ Environment=CONTROLCENTER_OBSIDIAN_EDITING=1
 Environment=CONTROLCENTER_DASHBOARD_STATE_DIR=%h/.local/state/controlcenter/dashboard-state
 Environment=CONTROLCENTER_TRUSTED_PROXY_IPS=100.64.0.0/10,fd7a:115c:a1e0::/48
 Environment=FLEETPROBE_TOKEN_FILE=%h/.config/controlcenter/secrets/fleetprobe-token
-Environment=PLANCIA_FLEET_CONFIG=%h/ControlCenter/configs/plancia/fleet.json
-Environment=PLANCIA_PROFILE_COMMANDS_FILE=%h/ControlCenter/configs/plancia/profile-commands.json
+Environment=PLANCIA_FLEET_CONFIG=%h/.config/plancia/fleet.json
+Environment=PLANCIA_PROFILE_COMMANDS_FILE=%h/.config/plancia/profile-commands.json
 Environment=PLANCIA_REQUIRE_PRIVATE_CONFIG=1
 
 [Install]

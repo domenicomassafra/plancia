@@ -21,14 +21,25 @@ concurrency:
 
 jobs:
   owner-backend:
-    runs-on: [self-hosted, macOS, ARM64, controlcenter, studio]
+    # Plancia has no registered self-hosted runner. This disposable GitHub VM
+    # does not compete with Studio/MiniPC workloads or need their resource guard.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, MIT
         with:
           persist-credentials: false
+      - name: Create isolated Python environment
+        run: python3 -m venv "$RUNNER_TEMP/plancia-owner-venv"
+      - name: Install pinned backend test dependencies
+        working-directory: owner
+        run: |
+          "$RUNNER_TEMP/plancia-owner-venv/bin/python" -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Test API, auth, historical data and host probes
         working-directory: owner
-        run: python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py build -- uv run --no-project --with-requirements requirements-dev.txt python -m pytest -q -p no:cacheprovider
+        run: |
+          "$RUNNER_TEMP/plancia-owner-venv/bin/python" -m pytest -q -p no:cacheprovider
       - name: Verify public source does not contain credentials
-        run: python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py build -- gitleaks dir owner --no-banner --redact
+        run: |
+          GOBIN="$RUNNER_TEMP" go install github.com/gitleaks/gitleaks/v8@v8.30.1
+          "$RUNNER_TEMP/gitleaks" dir owner --no-banner --redact

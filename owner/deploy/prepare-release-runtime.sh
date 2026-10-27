@@ -6,8 +6,8 @@ set -euo pipefail
 # the Python dependency set instead of reusing one mutable global venv.
 
 release_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-runtime_root=${CONTROLCENTER_RUNTIME_ROOT:-"${XDG_DATA_HOME:-$HOME/.local/share}/controlcenter"}
-venv_root="$runtime_root/dashboard-venvs"
+runtime_root=${PLANCIA_RUNTIME_ROOT:-"${XDG_DATA_HOME:-$HOME/.local/share}/plancia"}
+venv_root="$runtime_root/owner-venvs"
 requirements="$release_root/requirements.txt"
 python_bin=${PYTHON_BIN:-python3}
 check_only=false

@@ -1,10 +1,10 @@
-# Advisory check on every push to main and once a week. A finding is
-# reported and does not fail the workflow.
+# Fail on RustSec vulnerabilities for donor dependencies while Cargo remains.
 name: audit
 
 on:
   push:
     branches: [main]
+  pull_request:
   schedule:
     # Monday 06:17 UTC.
     - cron: "17 6 * * 1"
@@ -20,7 +20,6 @@ env:
 jobs:
   audit:
     runs-on: ubuntu-22.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16

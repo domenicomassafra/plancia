@@ -1,0 +1,34 @@
+name: Plancia owner backend
+
+on:
+  pull_request:
+    paths:
+      - 'owner/**'
+      - '.github/workflows/plancia-owner-backend.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'owner/**'
+      - '.github/workflows/plancia-owner-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plancia-owner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-backend:
+    runs-on: [self-hosted, macOS, ARM64, controlcenter, studio]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, MIT
+        with:
+          persist-credentials: false
+      - name: Test API, auth, historical data and host probes
+        working-directory: owner
+        run: python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py build -- uv run --no-project --with-requirements requirements-dev.txt python -m pytest -q -p no:cacheprovider
+      - name: Verify public source does not contain credentials
+        run: python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py build -- gitleaks dir owner --no-banner --redact

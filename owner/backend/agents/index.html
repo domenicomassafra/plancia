@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b27">
+  <title>Agenti · Plancia</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#e9f1fc;background:#0d1824;color-scheme:dark}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh}main{max-width:900px;margin:auto;padding:20px}
+    a{color:#9ed5ff}header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+    h1{font-size:1.6rem;margin:24px 0 8px}p{color:#adbacb;line-height:1.55}
+    form{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 18px}
+    input,select,button,textarea{border:1px solid #405469;background:#172a3e;border-radius:9px;padding:13px;color:inherit;font:inherit}
+    input{flex:1 1 200px;min-width:0}select{flex:0 1 185px}button{background:#235d8d;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #9ed5ff;outline-offset:2px}
+    article{background:#152536;border:1px solid #304359;border-radius:12px;padding:14px;margin:12px 0;overflow-wrap:anywhere}
+    article h2{font-size:1.05rem;margin:0 0 6px}article p{margin:6px 0}
+    .meta{font-size:.85rem;color:#92acc5}.snippet{white-space:pre-wrap;color:#dae7f4}
+    #codex-new{padding:16px;border:1px solid #405469;border-radius:12px;background:#111f2e}#codex-form{display:grid;gap:10px}#codex-form select{width:100%}#codex-start{justify-self:start}#live{padding:16px;border:1px solid #405469;border-radius:12px;background:#111f2e}
+    #terminal-select{width:100%;margin-top:8px}
+    #terminal-screen{overflow:auto;min-height:180px;max-height:53vh;margin:14px 0 0;padding:14px;border:1px solid #405469;border-radius:9px;background:#050d16;color:#d6e7f6;white-space:pre;tab-size:4;font:12px/1.5 ui-monospace,SFMono-Regular,monospace}
+    #terminal-form{display:grid;gap:10px;margin:12px 0 0}
+    #terminal-input{width:100%;min-height:72px;resize:vertical}
+    #terminal-send{justify-self:start}
+    #status{min-height:1.3em}#results:empty{display:none}
+    @media (max-width:510px){main{padding:14px}form>*{flex:1 1 100%}button{width:100%}}
+  </style>
+  <script defer src="/agents/client.js"></script>
+</head>
+<body>
+  <main>
+    <header><strong>Plancia / Agenti</strong><a href="/">Panoramica</a></header>
+    <h1>Nuova sessione Codex</h1>
+    <p>Seleziona un account e un modello disponibile per una nuova sessione. Le sessioni già aperte mantengono la propria identità.</p>
+    <section id="codex-new" aria-label="Nuova sessione Codex">
+      <form id="codex-form">
+        <label for="codex-account">Account Codex</label>
+        <select id="codex-account" required><option value="">Caricamento account…</option></select>
+        <label for="codex-model">Modello disponibile</label>
+        <select id="codex-model" required><option value="">Seleziona un account</option></select>
+        <button id="codex-start" type="submit" disabled>Apri sessione Codex</button>
+      </form>
+      <p id="codex-state" class="meta" role="status" aria-live="polite"></p>
+      <div id="codex-sessions" class="meta" aria-label="Sessioni Codex avviate"></div>
+    </section>
+    <h1>Sessioni live</h1>
+    <p>Terminali Orca originali: apri la sessione già avviata, leggi lo schermo e invia un messaggio. L’invio è consentito soltanto a terminali connessi e scrivibili.</p>
+    <section id="live" aria-label="Sessioni agenti live">
+      <label for="terminal-select">Sessione esistente</label>
+      <select id="terminal-select" aria-label="Sessione esistente"><option value="">Caricamento sessioni…</option></select>
+      <p id="terminal-state" class="meta" role="status" aria-live="polite"></p>
+      <pre id="terminal-screen" aria-label="Schermo terminale corrente" role="log" aria-live="off">Seleziona una sessione.</pre>
+      <form id="terminal-form">
+        <label for="terminal-input">Messaggio al terminale selezionato</label>
+        <textarea id="terminal-input" maxlength="2000" required placeholder="Scrivi un messaggio" aria-label="Messaggio da inviare"></textarea>
+        <button type="submit" id="terminal-send" disabled>Invia al terminale</button>
+      </form>
+      <p class="meta">Il CLI conferma l’accettazione del comando; la risposta si verifica nello schermo live. Dopo un errore di rete controlla lo schermo prima di reinviare.</p>
+    </section>
+    <h1>Storico sessioni di coding</h1>
+    <p>Ricerca sulle sessioni originali tramite Orca, senza copiarle. Claude Code, Codex, Pi e OpenCode.</p>
+    <p id="index-status" class="meta" role="status">Verifica indice Orca…</p>
+    <form id="search-form">
+      <label for="host">Computer</label>
+      <select id="host" name="host"><option value="minipc">MiniPC</option><option value="macbookair">MacBook Air</option><option value="matebooklinux">Omarchy</option></select>
+      <label for="query">Cerca nelle sessioni</label>
+      <input id="query" name="query" type="search" minlength="2" maxlength="120" required autocomplete="off" placeholder="Parole della conversazione">
+      <button type="submit" id="search-button">Cerca</button>
+    </form>
+    <p id="status" role="status" aria-live="polite">Pronto per la ricerca.</p>
+    <section id="results" aria-label="Risultati della ricerca"></section>
+  </main>
+</body>
+</html>

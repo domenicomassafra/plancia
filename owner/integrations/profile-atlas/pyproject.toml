@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chrome-profile-launcher"
+version = "3.2.7"
+description = "Host-local Chrome & Edge profile agent for Signal Deck"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+authors = [{name = "Domenico Massafra"}]
+
+[project.scripts]
+chrome-profiles = "chrome_profile_launcher.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chrome_profile_launcher"]

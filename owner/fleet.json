@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "agent_port": 9631,
+  "poll_interval_s": 5,
+  "hosts": [
+    {
+      "id": "minipc",
+      "name": "MiniPC",
+      "subtitle": "Example host",
+      "agent_host": "minipc.example.invalid",
+      "agent_ip": "192.0.2.10",
+      "ssh_alias": "minipc",
+      "os": "linux",
+      "role": "primary",
+      "image": null,
+      "mac": null,
+      "notes": "Example host. Replace with an installed private fleet config."
+    },
+    {
+      "id": "mac-studio",
+      "name": "Mac Studio",
+      "subtitle": "Example host",
+      "agent_host": "mac-studio.example.invalid",
+      "agent_ip": "192.0.2.11",
+      "ssh_alias": "macstudio",
+      "os": "darwin",
+      "role": "workstation",
+      "image": null,
+      "mac": null,
+      "notes": "Example host. Replace with an installed private fleet config."
+    },
+    {
+      "id": "macbook-air",
+      "name": "MacBook Air",
+      "subtitle": "Example host",
+      "agent_host": "macbook-air.example.invalid",
+      "agent_ip": "192.0.2.12",
+      "ssh_alias": "macbookair",
+      "os": "darwin",
+      "role": "portable",
+      "image": null,
+      "mac": null,
+      "notes": "Example host. Replace with an installed private fleet config."
+    },
+    {
+      "id": "matebooklinux",
+      "name": "MateBook Omarchy",
+      "subtitle": "Example host",
+      "agent_host": "matebooklinux.example.invalid",
+      "agent_ip": "192.0.2.13",
+      "ssh_alias": "matebooklinux",
+      "os": "linux",
+      "role": "workstation",
+      "image": null,
+      "mac": null,
+      "notes": "Example host. Replace with an installed private fleet config."
+    },
+    {
+      "id": "matebook",
+      "name": "MateBook Windows",
+      "subtitle": "Example host",
+      "agent_host": "matebook.example.invalid",
+      "agent_ip": "192.0.2.14",
+      "ssh_alias": "matebook",
+      "os": "windows",
+      "role": "workstation",
+      "offline": true,
+      "image": null,
+      "mac": null,
+      "notes": "Example host. Replace with an installed private fleet config."
+    }
+  ]
+}

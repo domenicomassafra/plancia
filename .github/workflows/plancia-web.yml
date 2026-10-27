@@ -28,6 +28,16 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Require web-only distribution
+        working-directory: .
+        run: |
+          test -d web
+          for retired in Cargo.toml Cargo.lock build.rs src agent share-server assets tests; do
+            test ! -e "$retired" || { echo "Retired donor path restored: $retired" >&2; exit 1; }
+          done
+          for retired in ci audit release; do
+            test ! -e ".github/workflows/$retired.yml" || { echo "Retired native workflow restored: $retired" >&2; exit 1; }
+          done
       - run: npm ci --no-fund
       - run: npm run build
       - run: npm test

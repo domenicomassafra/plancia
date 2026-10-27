@@ -37,6 +37,8 @@ jobs:
           "$RUNNER_TEMP/plancia-owner-venv/bin/python" -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Test API, auth, historical data and host probes
         working-directory: owner
+        env:
+          FLEETPROBE_TOKEN: ci-fixture-only-never-production
         run: |
           "$RUNNER_TEMP/plancia-owner-venv/bin/python" -m pytest -q -p no:cacheprovider
       - name: Verify public source does not contain credentials

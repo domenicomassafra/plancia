@@ -83,6 +83,5 @@ python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py build -
 ```
 
 The original backend provenance is preserved by the issue #919 migration
-commits in the two owner repositories. Donor Muxin Rust sources in `../src/`,
-`../agent/` and `../share-server/` are unchanged. Plancia's Apache-2.0 donor
-LICENSE and notices remain intact.
+commits in the two owner repositories. The retired Muxin donor sources are not restored (Plancia #63); their
+Apache-2.0 provenance remains in the Git history, LICENSE and notices.

@@ -2,14 +2,8 @@ name: Plancia owner backend
 
 on:
   pull_request:
-    paths:
-      - 'owner/**'
-      - '.github/workflows/plancia-owner-backend.yml'
   push:
     branches: [main]
-    paths:
-      - 'owner/**'
-      - '.github/workflows/plancia-owner-backend.yml'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +23,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, MIT
         with:
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0, MIT
+        with:
+          node-version: '24'
       - name: Create isolated Python environment
         run: python3 -m venv "$RUNNER_TEMP/plancia-owner-venv"
       - name: Install pinned backend test dependencies
@@ -41,6 +38,9 @@ jobs:
           FLEETPROBE_TOKEN: ci-fixture-only-never-production
         run: |
           "$RUNNER_TEMP/plancia-owner-venv/bin/python" -m pytest -q -p no:cacheprovider
+      - name: Test native agents browser client behavior
+        working-directory: owner
+        run: node --test tests/test_agents_live_ui.cjs
       - name: Verify public source does not contain credentials
         run: |
           GOBIN="$RUNNER_TEMP" go install github.com/zricethezav/gitleaks/v8@v8.30.1

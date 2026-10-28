@@ -1,6 +1,6 @@
 # UI Plancia
 
-Questa directory è la superficie web React 19/TypeScript/Vite 7 originata da `controlcenter/dashboard/web` e importata nella issue [Plancia #27](https://github.com/domenicomassafra/plancia/issues/27). È ora la destinazione versionata della UI owner; il backend ControlCenter rimane autoritativo per API, auth, writer e audit. Vedi `../PRODUCT.md`, `../DESIGN.md`, `PROVENANCE.md`.
+Questa directory è la superficie web React 19/TypeScript/Vite 7 originata da `controlcenter/dashboard/web` e importata nella issue [Plancia #27](https://github.com/domenicomassafra/plancia/issues/27). È la destinazione versionata della UI owner; il backend FastAPI è ora in `../owner/`, trasferito dalla issue [ControlCenter #919](https://github.com/domenicomassafra/controlcenter/issues/919). Vedi `../PRODUCT.md`, `../DESIGN.md`, `PROVENANCE.md`.
 
 Agenti, sviluppo, build e test sul solo Mac Studio, dalla directory `web/`:
 

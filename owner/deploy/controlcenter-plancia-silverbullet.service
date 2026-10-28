@@ -1,0 +1,26 @@
+# SilverBullet 2.12.1 MIT, pinned by Plancia #1 / #2.
+# Use only the existing Syncthing vault directory on this host, limited to
+# 05-knowledge; no copy, disk index, client-side vault sync or write commands.
+[Unit]
+Description=ControlCenter Plancia SilverBullet read-only notes sidecar
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/controlcenter/plancia-silverbullet-2.12.1/silverbullet --single %h/Obsidian/05-knowledge
+Environment=SB_HOSTNAME=127.0.0.1
+Environment=SB_PORT=3082
+Environment=SB_URL_PREFIX=/notes
+Environment=SB_READ_ONLY=1
+Environment=SB_DISABLE_SERVICE_WORKER=1
+Environment=SB_RUNTIME_API=0
+MemoryMax=384M
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

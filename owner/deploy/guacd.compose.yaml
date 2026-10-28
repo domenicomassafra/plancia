@@ -1,0 +1,23 @@
+# Official Apache Guacamole 1.6.0 daemon, no external listener or user DB.
+# Source: https://guacamole.apache.org/doc/gug/guacamole-docker.html
+# guacd does NOT authenticate clients. Only the owner-authenticated dashboard
+# may bridge its loopback TCP port to a fixed, host-local allowlist.
+name: controlcenter-remote
+services:
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: controlcenter-guacd
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4822:4822"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 128

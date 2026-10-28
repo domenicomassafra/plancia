@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.controlcenter.fleetprobe</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__DATA_DIR__/fleetprobe.py</string>
+    <string>--serve</string>
+    <string>--host-id</string>
+    <string>__HOST_ID__</string>
+    <string>--bind</string>
+    <string>auto</string>
+    <string>--token-file</string>
+    <string>__TOKEN_FILE__</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>15</integer>
+  <!-- Keep CPU/IO priority low, but do not use ProcessType=Background. On a
+       loaded Mac that QoS can starve Foundation/osascript long enough to make
+       truthful APFS available-capacity telemetry miss the sampler deadline. -->
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__STATE_DIR__/fleetprobe.log</string>
+  <key>StandardErrorPath</key>
+  <string>__STATE_DIR__/fleetprobe.log</string>
+</dict>
+</plist>

@@ -1,6 +1,6 @@
 # Plancia — prodotto e requisiti
 
-Plancia è il punto di controllo unico dell'owner, **web-first** su desktop e iPhone. La base scelta il 20 ottobre 2026 è la superficie Signal Deck, con donor specializzati utilizzati tramite API/plugin/embed dove il comportamento è stato provato. L'app è distinta dal backend operativo ControlCenter. Le decisioni e l'origine sono documentate in [#22](https://github.com/domenicomassafra/plancia/issues/22), [#27](https://github.com/domenicomassafra/plancia/issues/27) e `web/PROVENANCE.md`.
+Plancia è il punto di controllo unico dell'owner, **web-first** su desktop e iPhone. La base scelta il 20 ottobre 2026 è la superficie Signal Deck, con donor specializzati utilizzati tramite API/plugin/embed dove il comportamento è stato provato. Il backend operativo e FleetProbe fanno ora parte di `owner/`; la policy generale e la configurazione privata restano in ControlCenter. Le decisioni e l'origine sono documentate in [#22](https://github.com/domenicomassafra/plancia/issues/22), [#27](https://github.com/domenicomassafra/plancia/issues/27), [ControlCenter #919](https://github.com/domenicomassafra/controlcenter/issues/919) e `web/PROVENANCE.md`.
 
 ## Esperienza richiesta
 
@@ -16,6 +16,6 @@ Una sola navigazione e identità owner, in browser responsive/PWA. Panoramica, F
 
 ## Stato e criteri di rilascio
 
-La UI React/Vite proviene esclusivamente da `plancia/web/`. Il servizio sul MiniPC serve un artefatto Plancia verificato insieme al backend canonico ControlCenter, nella stessa origine autenticata. Il packaging controlla commit e digest, conserva preimage e ricevuta del deploy e consente il rollback. La riconciliazione e le prove del consumer sono nella #20; la procedura è in `DESIGN.md`.
+La UI React/Vite è in `plancia/web/`; FastAPI e FleetProbe in `plancia/owner/`. Il servizio sul MiniPC serve frontend e backend dello stesso commit Plancia, nella stessa origine autenticata. Configurazione privata e SQLite esistenti continuano a essere letti dai percorsi dell'host. La pubblicazione mantiene il controllo dei digest, preimage e rollback. L'integrazione storica è nella #20; il cutover backend è nella #919, con procedura in `DESIGN.md`.
 
 Un rilascio si accetta con URL della stessa origine, auth/CSRF funzionanti, navigazione desktop/mobile provata, API senza dati duplicati, prove governate dei writer e rollback della release. Il collaudo dell'editor usa una fixture sintetica con readback; Notion richiede preview e post-fetch senza modifiche accidentali alle Actions personali. Test fisici iPhone e Windows rimangono nella [#25](https://github.com/domenicomassafra/plancia/issues/25); la checklist runtime è controlcenter#484.

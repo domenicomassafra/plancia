@@ -1,0 +1,36 @@
+# User-owned Projects require a classic PAT (project + repo scopes).
+name: Add issues to owner Project
+on:
+  issues:
+    types: [opened, reopened, transferred]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Add issue to Project #1
+        id: add
+        uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd
+        with:
+          project-url: https://github.com/users/domenicomassafra/projects/1
+          github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
+      - name: Set Prodotto/Repo
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          PROJECT_ITEM_ID: ${{ steps.add.outputs.itemId }}
+        run: |
+          gh api graphql \
+            -f query='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {singleSelectOptionId: $optionId}}) { projectV2Item { id } } }' \
+            -f projectId=PVT_kwHOBv5HFs4BnMa4 \
+            -f itemId="$PROJECT_ITEM_ID" \
+            -f fieldId=PVTSSF_lAHOBv5HFs4BnMa4zhmzvAI \
+            -f optionId=677b5bf5 \
+            --jq '.data.updateProjectV2ItemFieldValue.projectV2Item.id'

@@ -171,6 +171,50 @@ test("events from a replaced WebSocket cannot close or downgrade the live connec
   }
 });
 
+test("a stream awaiting session refresh ignores further frames from its old socket", async () => {
+  const scope = globalThis as Record<string, unknown>;
+  const original = { window: scope.window, fetch: scope.fetch, WebSocket: scope.WebSocket };
+  const sockets: {
+    onmessage?: (event: { data: string }) => void;
+    close: () => void;
+  }[] = [];
+  let finishBootstrap: ((response: Response) => void) | undefined;
+  let bootstrapCount = 0;
+  scope.window = {
+    location: { protocol: "https:", host: "fleet.example.test" },
+    clearInterval: () => {},
+    clearTimeout: () => {},
+  };
+  scope.fetch = () => {
+    bootstrapCount += 1;
+    return new Promise<Response>((resolve) => { finishBootstrap = resolve; });
+  };
+  scope.WebSocket = class {
+    onmessage?: (event: { data: string }) => void;
+    constructor() { sockets.push(this); }
+    close() {}
+  };
+
+  let unsubscribe: (() => void) | undefined;
+  try {
+    const snapshots: unknown[] = [];
+    unsubscribe = subscribeFleet((value) => snapshots.push(value), () => {});
+    const staleSocket = sockets[0];
+    staleSocket.onmessage?.({ data: JSON.stringify({ type: "error", code: "session_expired" }) });
+    staleSocket.onmessage?.({ data: JSON.stringify({ type: "snapshot", data: { hosts: ["stale"] } }) });
+    staleSocket.onmessage?.({ data: JSON.stringify({ type: "error", code: "session_expired" }) });
+
+    assert.deepEqual(snapshots, [], "pending auth recovery must ignore stale snapshots");
+    assert.equal(bootstrapCount, 1, "pending auth recovery must not start twice");
+    finishBootstrap?.(Response.json({ session: "refreshed" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(sockets.length, 2, "only one replacement socket should be opened");
+  } finally {
+    unsubscribe?.();
+    Object.assign(scope, original);
+  }
+});
+
 test("unsubscribed fleet stream ignores late WebSocket updates", () => {
   const scope = globalThis as Record<string, unknown>;
   const original = { window: scope.window, WebSocket: scope.WebSocket };

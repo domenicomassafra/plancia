@@ -388,7 +388,7 @@ export function subscribeFleet(
       onStatus("live");
     };
     connectedSocket.onmessage = (event) => {
-      if (closed || socket !== connectedSocket) return;
+      if (closed || socket !== connectedSocket || recoveringSession) return;
       try {
         const message = JSON.parse(event.data);
         const authCode = streamAuthCode(message);

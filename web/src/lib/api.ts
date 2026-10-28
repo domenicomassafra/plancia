@@ -377,21 +377,24 @@ export function subscribeFleet(
     // delivering snapshots; the reconnect attempt is silent in that state.
     if (pollTimer === null) onStatus("connecting");
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    socket = new WebSocket(`${protocol}://${window.location.host}/api/stream`);
+    const connectedSocket = new WebSocket(`${protocol}://${window.location.host}/api/stream`);
+    socket = connectedSocket;
 
-    socket.onopen = () => {
+    connectedSocket.onopen = () => {
+      if (closed || socket !== connectedSocket) return;
       socketOpen = true;
       attempt = 0;
       stopPolling();
       onStatus("live");
     };
-    socket.onmessage = (event) => {
+    connectedSocket.onmessage = (event) => {
+      if (closed || socket !== connectedSocket) return;
       try {
         const message = JSON.parse(event.data);
         const authCode = streamAuthCode(message);
         if (authCode === "session_required" || authCode === "session_expired") {
           recoveringSession = true;
-          socket?.close();
+          connectedSocket.close();
           void bootstrapSession()
             .then(() => {
               recoveringSession = false;
@@ -409,7 +412,7 @@ export function subscribeFleet(
         if (isTerminalStreamError(message)) {
           closed = true;
           onStatus("offline");
-          socket?.close();
+          connectedSocket.close();
           return;
         }
         if (message.type === "snapshot") onSnapshot(message.data as FleetSnapshot);
@@ -417,8 +420,11 @@ export function subscribeFleet(
         /* ignore malformed frame */
       }
     };
-    socket.onerror = () => socket?.close();
-    socket.onclose = () => {
+    connectedSocket.onerror = () => {
+      if (socket === connectedSocket) connectedSocket.close();
+    };
+    connectedSocket.onclose = () => {
+      if (socket !== connectedSocket) return;
       socketOpen = false;
       if (closed) return;
       if (recoveringSession) return;

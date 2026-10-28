@@ -1,6 +1,8 @@
 """Owner-only Guacamole tunnel: denied sessions never reach the remote endpoint."""
+import asyncio
 import json
 import os
+import socket
 import socketserver
 import threading
 from unittest.mock import patch
@@ -52,10 +54,14 @@ def test_remote_desktop_auth_denial_and_clipboard_tunnel(tmp_path, monkeypatch, 
         thread = threading.Thread(target=donor.serve_forever, daemon=True)
         thread.start()
         request.addfinalizer(donor.shutdown)
+        target_socket = socket.socket()
+        target_socket.bind(("127.0.0.1", 0))
+        target_socket.listen()
+        request.addfinalizer(target_socket.close)
         config = tmp_path / "desktops.json"
         config.write_text(json.dumps({"test": {
             "name": "Desktop isolato", "protocol": "vnc",
-            "hostname": "127.0.0.1", "port": 5909,
+            "hostname": "127.0.0.1", "port": target_socket.getsockname()[1],
             "capabilities": {"view": True, "input": True, "clipboard": True},
         }}))
         monkeypatch.setenv("CONTROLCENTER_DESKTOP_TARGETS_FILE", str(config))
@@ -134,6 +140,51 @@ def test_remote_desktop_auth_denial_and_clipboard_tunnel(tmp_path, monkeypatch, 
                 ws.send_text("9.clipboard,1.0,10.text/plain;")
                 assert ws.receive_text() == "9.clipboard,1.0,10.text/plain;"
         donor.shutdown()
+
+
+@pytest.mark.parametrize("hostname", ["127.0.0.1", "host.docker.internal"])
+def test_remote_inventory_does_not_grant_offline_target_when_guacd_is_healthy(tmp_path, monkeypatch, hostname):
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), FakeGuacd) as donor:
+        with socket.socket() as unused_target:
+            unused_target.bind(("127.0.0.1", 0))
+            closed_port = unused_target.getsockname()[1]
+        config = tmp_path / "targets.json"
+        config.write_text(json.dumps({"test": {
+            "name": "Desktop spento", "protocol": "vnc", "hostname": hostname,
+            "port": closed_port,
+            "capabilities": {"view": True, "input": True, "clipboard": True},
+        }}))
+        monkeypatch.setenv("CONTROLCENTER_DESKTOP_TARGETS_FILE", str(config))
+        monkeypatch.setenv("CONTROLCENTER_GUACD_HOST", "127.0.0.1")
+        monkeypatch.setenv("CONTROLCENTER_GUACD_PORT", str(donor.server_address[1]))
+        inventory = asyncio.run(desktops.list_desktops())
+        assert inventory["status"] == "offline"
+        assert inventory["desktops"][0]["state"] == "offline"
+        assert inventory["desktops"][0]["capabilities"] == {
+            "view": False, "input": False, "clipboard": False,
+        }
+
+
+def test_remote_inventory_resolves_docker_host_alias_for_live_target(tmp_path, monkeypatch):
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), FakeGuacd) as donor:
+        with socket.socket() as reachable_target:
+            reachable_target.bind(("127.0.0.1", 0))
+            reachable_target.listen()
+            config = tmp_path / "targets.json"
+            config.write_text(json.dumps({"test": {
+                "name": "Desktop isolato", "protocol": "vnc", "hostname": "host.docker.internal",
+                "port": reachable_target.getsockname()[1],
+                "capabilities": {"view": True, "input": False, "clipboard": False},
+            }}))
+            monkeypatch.setenv("CONTROLCENTER_DESKTOP_TARGETS_FILE", str(config))
+            monkeypatch.setenv("CONTROLCENTER_GUACD_HOST", "127.0.0.1")
+            monkeypatch.setenv("CONTROLCENTER_GUACD_PORT", str(donor.server_address[1]))
+            inventory = asyncio.run(desktops.list_desktops())
+            assert inventory["status"] == "ready"
+            assert inventory["desktops"][0]["state"] == "ready"
+            assert inventory["desktops"][0]["capabilities"] == {
+                "view": True, "input": False, "clipboard": False,
+            }
 
 
 def test_no_config_is_fail_closed(monkeypatch, tmp_path):

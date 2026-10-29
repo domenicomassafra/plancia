@@ -40,9 +40,11 @@ La configurazione Vite preesistente proxies `/api` a `127.0.0.1:8000` **solo nel
 
 ## Layout condiviso e responsabilità
 
-`web/` mantiene nomi e import relativi dell'app Signal Deck per un'importazione verificabile. #27 registra origine e API; #6 modifica esclusivamente shell/CSS globale e nome/branding visibili, bianco/nero/grigio; #12 e #13 possiedono rispettivamente i moduli Notion e Obsidian; #18 concorda manifest/PWA con #6; #20 possiede integrazione/deploy. Ogni nuovo donor è un pacchetto o servizio versionato separato con licenza, API e test del confine; niente patch o fusione del suo core.
+`web/` mantiene nomi e import relativi dell'app Signal Deck per un'importazione verificabile. #27 registra origine e API; #6 modifica esclusivamente shell/CSS globale e nome/branding visibili, bianco/nero/grigio; #12 e #13 possiedono rispettivamente i moduli Notion e Obsidian; #18 concorda manifest/PWA con #6. #20 records historical integration/deployment; subsequent changes belong to the accountable author of each current issue under `AGENTS.md`. Ogni nuovo donor è un pacchetto o servizio versionato separato con licenza, API e test del confine; niente patch o fusione del suo core.
 
 ## Pubblicazione e verifica
+
+The following steps record the historical #919 cutover. For subsequent releases, the current issue author follows `AGENTS.md`: independent exact-head review, green CI, coordinator-scheduled guarded merge and runtime operations, installed consumer proof, then issue CLOSED.
 
 1. Integrare via review indipendente la PR Plancia #61 e la PR ControlCenter #932 (issue #919), rileggendo entrambi gli SHA remoti. Sul Mac Studio eseguire test backend `owner/` e build/test di `web/`, poi validare `web/scripts/check-release.mjs` per lo SHA esatto e gli asset del bundle.
 2. Dal checkout ControlCenter privato usare `tools/install-plancia-private-config.sh --check` e poi `--apply minipc` per installare inventario e comandi locali in `~/.config/plancia/` sul MiniPC (file mode 0600, directory 0700). Installare un albero immutabile `~/.local/share/plancia/releases/<SHA-Plancia>/{owner,web}` con `web/dist/` verificato. Eseguire `owner/deploy/prepare-release-runtime.sh` per legare la venv, controllare `--check`, predisporre il symlink `current` e la nuova `plancia-backend.service` con `PLANCIA_FLEET_CONFIG` e `PLANCIA_PROFILE_COMMANDS_FILE` puntati alla destinazione privata installata.

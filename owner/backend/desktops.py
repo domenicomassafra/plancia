@@ -106,6 +106,23 @@ def _guacd_endpoint() -> tuple[str, int]:
     return hostname, port
 
 
+async def _target_reachable(target: dict) -> bool:
+    """Check an allowlisted endpoint without starting a remote desktop session."""
+    hostname = target["hostname"]
+    # guacd runs in Docker; its host gateway alias does not resolve on the host.
+    if hostname in ("host.docker.internal", "host.containers.internal"):
+        hostname = "127.0.0.1"
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(hostname, int(target["port"])), timeout=1.0,
+        )
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except (OSError, ValueError, TimeoutError):
+        return False
+
+
 @router.get("/api/v1/desktops")
 async def list_desktops() -> dict:
     targets = configured_desktops()
@@ -118,10 +135,15 @@ async def list_desktops() -> dict:
             healthy = True
         except (OSError, ValueError, TimeoutError):
             pass
+    allowed_ids = [target_id for target_id, target in targets.items() if target["capabilities"]["view"]]
+    reachable = {}
+    if healthy:
+        checks = await asyncio.gather(*(_target_reachable(targets[target_id]) for target_id in allowed_ids))
+        reachable = dict(zip(allowed_ids, checks))
     desktops = []
     for target_id, target in sorted(targets.items()):
         granted = target["capabilities"]["view"]
-        state = ("ready" if granted and healthy else "offline" if granted else
+        state = ("ready" if granted and reachable.get(target_id, False) else "offline" if granted else
                  "permission_denied" if target["explicit_view"] else "unconfigured")
         desktops.append({
             "id": target_id, "name": target["name"], "protocol": target["protocol"],
@@ -131,9 +153,9 @@ async def list_desktops() -> dict:
             },
         })
     return {"donor": "apache-guacamole-1.6.0",
-            "status": "ready" if healthy else "offline" if any(
-                target["capabilities"]["view"] for target in targets.values()
-            ) else "permission_denied" if any(target["explicit_view"] for target in targets.values())
+            "status": "ready" if any(item["state"] == "ready" for item in desktops)
+            else "offline" if allowed_ids
+            else "permission_denied" if any(target["explicit_view"] for target in targets.values())
             else "unconfigured", "desktops": desktops}
 
 

@@ -181,7 +181,8 @@ export function HostDetail({ host, connectionOffline, receipts, onClose, onRecei
                 <button
                   key={range.minutes}
                   type="button"
-                  onClick={() => setMinutes(range.minutes)}
+                  value={range.minutes}
+                  onClick={(event) => setMinutes(Number(event.currentTarget.value))}
                   className={`min-h-11 rounded-md px-2.5 py-1 text-[11px] transition focus-visible:outline-2 focus-visible:outline-accent ${
                     minutes === range.minutes
                       ? "bg-ink-700 text-ink-200"

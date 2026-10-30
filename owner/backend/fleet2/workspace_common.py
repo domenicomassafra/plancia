@@ -63,4 +63,3 @@ EDITABLE_TYPES = {
 }
 PROTECTED_RICH_TEXT_TOKENS = frozenset({"body", "description"})
 LINK_RE = re.compile(r"!?(?:\[([^\]]+)\]\([^)]*?\)|\[\[([^\]]+)\]\])")
-TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")

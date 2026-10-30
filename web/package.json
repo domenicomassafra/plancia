@@ -11,7 +11,7 @@
     "test:release": "node --test tests/release-preflight.test.mjs",
     "test:pwa": "node --test tests/pwa.test.mjs",
     "test:agents-shell": "node --test tests/agents-shell.test.mjs tests/guacamole-session.test.mjs",
-    "test:history": "node --experimental-strip-types tests/history-ranges.test.ts && node --test tests/fleet-ui.test.mjs",
+    "test:history": "node --test tests/fleet-ui.test.mjs",
     "test:device-image": "node --no-warnings --test tests/device-image.test.mjs",
     "test:overview": "node --experimental-strip-types tests/overview-state.test.ts",
     "test:stream": "node --experimental-strip-types --test tests/stream-auth.test.ts",

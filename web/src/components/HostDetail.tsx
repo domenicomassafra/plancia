@@ -20,8 +20,14 @@ import { DeviceImage } from "./DeviceImage";
 import { HostActions } from "./HostActions";
 import { Meter } from "./Meter";
 import { Sparkline } from "./Sparkline";
-import { HISTORY_RANGES } from "../lib/history-ranges";
 import { overviewHostState, showCurrentMetrics } from "../lib/overview-state";
+
+const HISTORY_RANGES = [
+  { minutes: 60, label: "1 ora" },
+  { minutes: 360, label: "6 ore" },
+  { minutes: 1440, label: "24 ore" },
+  { minutes: 20160, label: "14 giorni" },
+] as const;
 
 interface HostDetailProps {
   host: HostView;
@@ -175,7 +181,8 @@ export function HostDetail({ host, connectionOffline, receipts, onClose, onRecei
                 <button
                   key={range.minutes}
                   type="button"
-                  onClick={() => setMinutes(range.minutes)}
+                  value={range.minutes}
+                  onClick={(event) => setMinutes(Number(event.currentTarget.value))}
                   className={`min-h-11 rounded-md px-2.5 py-1 text-[11px] transition focus-visible:outline-2 focus-visible:outline-accent ${
                     minutes === range.minutes
                       ? "bg-ink-700 text-ink-200"

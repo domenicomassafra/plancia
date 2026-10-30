@@ -151,6 +151,9 @@ test("HostDetail segnala l'intero campione precedente come storico", () => {
   assert.doesNotMatch(html, />Regolare</);
   assert.match(html, /FleetProbe/);
   assert.match(html, /APFS in cache/);
+  const ranges = [...html.matchAll(/<button\b(?=[^>]*\bvalue="(\d+)")[^>]*>(1 ora|6 ore|24 ore|14 giorni)<\/button>/g)]
+    .map((match) => [Number(match[1]), match[2]]);
+  assert.deepEqual(ranges, [[60, "1 ora"], [360, "6 ore"], [1440, "24 ore"], [20160, "14 giorni"]]);
 });
 
 test("HostDetail senza segnale stream dal chiamante resta prudente; il segnale verificato abilita live", () => {

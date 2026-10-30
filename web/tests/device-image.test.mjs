@@ -4,8 +4,6 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { deviceImageVisible } from "../src/lib/device-image.ts";
-
 const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 
 function walk(dir) {
@@ -15,15 +13,6 @@ function walk(dir) {
   });
 }
 
-test("device image visibility is scoped to the exact asset name", () => {
-  assert.equal(deviceImageVisible(null, null), false);
-  assert.equal(deviceImageVisible("", null), false);
-  assert.equal(deviceImageVisible("minipc-owner.png", null), true);
-  // A failed asset falls back, but a different asset on the same surface starts clean.
-  assert.equal(deviceImageVisible("minipc-owner.png", "minipc-owner.png"), false);
-  assert.equal(deviceImageVisible("mac-studio-owner.png", "minipc-owner.png"), true);
-});
-
 test("device assets have one fallback surface and no raw <img> call sites", () => {
   const files = walk(src).filter((path) => /\.tsx?$/.test(path));
   const deviceImage = readFileSync(join(src, "components", "DeviceImage.tsx"), "utf8");
@@ -31,7 +20,7 @@ test("device assets have one fallback surface and no raw <img> call sites", () =
   // The single canonical surface must fail closed: an absent or failed asset
   // renders the explicit fallback, never a broken image.
   assert.match(deviceImage, /onError=\{\(\) => setFailedImage\(image \?\? null\)\}/);
-  assert.match(deviceImage, /if \(!deviceImageVisible\(image, failedImage\)\) return <\>\{fallback\}<\/>;/);
+  assert.match(deviceImage, /if \(!image \|\| failedImage === image\) return <>\{fallback\}<\/>;/);
 
   // No view or component may build its own /assets/devices/ <img>, because that
   // bypasses the fallback and reintroduces the broken-image defect.

@@ -1,7 +1,5 @@
 import { useState, type ReactNode } from "react";
 
-import { deviceImageVisible } from "../lib/device-image";
-
 type DeviceImageProps = {
   image?: string | null;
   className?: string;
@@ -25,7 +23,7 @@ export function DeviceImage({
   loading,
 }: DeviceImageProps) {
   const [failedImage, setFailedImage] = useState<string | null>(null);
-  if (!deviceImageVisible(image, failedImage)) return <>{fallback}</>;
+  if (!image || failedImage === image) return <>{fallback}</>;
   return (
     <img
       src={`/assets/devices/${image}`}

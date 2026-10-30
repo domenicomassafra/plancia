@@ -20,8 +20,14 @@ import { DeviceImage } from "./DeviceImage";
 import { HostActions } from "./HostActions";
 import { Meter } from "./Meter";
 import { Sparkline } from "./Sparkline";
-import { HISTORY_RANGES } from "../lib/history-ranges";
 import { overviewHostState, showCurrentMetrics } from "../lib/overview-state";
+
+const HISTORY_RANGES = [
+  { minutes: 60, label: "1 ora" },
+  { minutes: 360, label: "6 ore" },
+  { minutes: 1440, label: "24 ore" },
+  { minutes: 20160, label: "14 giorni" },
+] as const;
 
 interface HostDetailProps {
   host: HostView;

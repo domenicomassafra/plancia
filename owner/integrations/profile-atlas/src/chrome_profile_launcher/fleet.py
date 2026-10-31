@@ -42,6 +42,8 @@ def current_host_id() -> str:
         return override
 
     hostname = socket.gethostname().casefold()
+    if hostname.split(".", 1)[0] == "dodomarchy":
+        return "macbook-air"
     if "macbook-air" in hostname or "macbookair" in hostname:
         return "macbook-air"
     if "mac-studio" in hostname or "macstudio" in hostname:

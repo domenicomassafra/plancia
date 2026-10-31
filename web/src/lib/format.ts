@@ -14,13 +14,6 @@ export const SEVERITY_BG: Record<Severity, string> = {
   unknown: "bg-signal-unknown",
 };
 
-export const SEVERITY_RING: Record<Severity, string> = {
-  ok: "ring-signal-ok/25",
-  warn: "ring-signal-warn/45",
-  crit: "ring-signal-crit/60",
-  unknown: "ring-ink-600/60",
-};
-
 export const SEVERITY_LABEL: Record<Severity, string> = {
   ok: "Regolare",
   warn: "Attenzione",

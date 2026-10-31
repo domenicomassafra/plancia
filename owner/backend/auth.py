@@ -304,6 +304,14 @@ def _secure_response(response: Response, policy: AuthPolicy) -> Response:
             if origin.startswith("https://")
         )
     )
+    # Embed only the official Hermes dashboard on the same approved tailnet host.
+    # The dashboard keeps its own authentication, cookies, websocket and session state.
+    hermes_frames = " ".join(sorted({
+        f"https://{urlsplit(origin).hostname}:19443"
+        for origin in policy.allowed_origins
+        if origin.startswith("https://")
+        and (urlsplit(origin).hostname or "").endswith(".ts.net")
+    }))
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -314,7 +322,9 @@ def _secure_response(response: Response, policy: AuthPolicy) -> Response:
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; base-uri 'none'; object-src 'none'; "
-        "frame-ancestors 'none'; img-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        f"frame-src 'self'{(' ' + hermes_frames) if hermes_frames else ''}; "
+        "img-src 'self' data:; "
         "script-src 'self'; style-src 'self' 'unsafe-inline'; "
         f"connect-src 'self'{(' ' + websocket_origins) if websocket_origins else ''}",
     )

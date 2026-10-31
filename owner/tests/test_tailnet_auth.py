@@ -165,6 +165,17 @@ class TestTailnetAuth(unittest.TestCase):
         self.assertIn("wss://fleet.example.test", response.headers["content-security-policy"])
         self.assertNotIn("connect-src 'self' wss:;", response.headers["content-security-policy"])
 
+    def test_hermes_frame_is_scoped_to_the_approved_tailnet_host(self):
+        with patch.dict(os.environ, {ALLOWED_ORIGINS_ENV: (
+            ORIGIN + ",https://minipc-ubuntu.example.ts.net:8443"
+        )}):
+            response = self.client().get("/", headers=IDENTITY_HEADERS)
+        csp = response.headers["content-security-policy"]
+        self.assertIn("frame-src 'self' https://minipc-ubuntu.example.ts.net:19443;", csp)
+        self.assertNotIn("https://fleet.example.test:19443", csp)
+        self.assertEqual(response.headers["x-frame-options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", csp)
+
     def test_spa_entry_and_legacy_paths_share_one_bootstrap_contract(self):
         # The SPA is reachable at both entries and bootstraps a session.
         for path in ("/", "/index.html"):

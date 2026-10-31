@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { AgentsSignoriView } from "./AgentsSignoriView";
+import { HermesDashboardView } from "./HermesDashboardView";
 import { RemoteDesktopView } from "./RemoteDesktopView";
 import { OrcaChatPanel } from "./OrcaChatPanel";
 
-type AgentsSubView = "sessions" | "orca" | "desktop";
+type AgentsSubView = "hermes-app" | "sessions" | "orca" | "desktop";
 
 /** Authorized native agent surfaces under Plancia's existing navigation. */
 export function AgentsSection() {
-  const [subView, setSubView] = useState<AgentsSubView>("sessions");
-  const [visited, setVisited] = useState<Set<AgentsSubView>>(() => new Set(["sessions"]));
+  const [subView, setSubView] = useState<AgentsSubView>("hermes-app");
+  const [visited, setVisited] = useState<Set<AgentsSubView>>(() => new Set(["hermes-app"]));
   const selectSubView = (next: AgentsSubView) => {
     setVisited((current) => new Set(current).add(next));
     setSubView(next);
@@ -24,7 +25,8 @@ export function AgentsSection() {
       </div>
       <div role="group" aria-label="Sezioni Agenti" className="flex flex-wrap gap-2">
         {([
-          { id: "sessions", label: "Signori Hermes" },
+          { id: "hermes-app", label: "App Hermes" },
+          { id: "sessions", label: "Cronologia redatta" },
           { id: "orca", label: "Pi · Orca" },
           { id: "desktop", label: "Desktop" },
         ] as const).map((item) => (
@@ -35,7 +37,10 @@ export function AgentsSection() {
           </button>
         ))}
       </div>
-      <div id="agents-content" role="region" aria-label={subView === "sessions" ? "Chat Hermes" : subView === "orca" ? "Chat Orca" : "Desktop Agenti"}>
+      <div id="agents-content" role="region" aria-label={subView === "hermes-app" ? "App Hermes" : subView === "sessions" ? "Cronologia Hermes" : subView === "orca" ? "Chat Orca" : "Desktop Agenti"}>
+        <section hidden={subView !== "hermes-app"} aria-label="App Hermes">
+          {subView === "hermes-app" && <HermesDashboardView />}
+        </section>
         <section hidden={subView !== "sessions"} aria-label="Sessioni Hermes">
           {visited.has("sessions") && <AgentsSignoriView />}
         </section>

@@ -31,15 +31,18 @@ test("Agenti integra chat Hermes/Orca e Desktop senza navigazione globale duplic
   const html = renderToStaticMarkup(createElement(AgentsSection));
   assert.doesNotMatch(html, /<nav\b/);
   assert.match(html, /aria-label="Sezioni Agenti"/);
-  assert.match(html, /aria-pressed="true"[^>]*>Signori Hermes<\/button>/);
+  assert.match(html, /aria-pressed="true"[^>]*>App Hermes<\/button>/);
+  assert.match(html, /aria-pressed="false"[^>]*>Cronologia redatta<\/button>/);
   assert.match(html, /aria-pressed="false"[^>]*>Pi · Orca<\/button>/);
   assert.match(html, /aria-pressed="false"[^>]*>Desktop<\/button>/);
-  assert.match(html, /role="region" aria-label="Chat Hermes"/);
-  assert.match(html, /<section aria-label="Sessioni Hermes">/);
+  assert.match(html, /role="region" aria-label="App Hermes"/);
+  assert.match(html, /<section aria-label="App Hermes">/);
+  assert.match(html, /<section hidden="" aria-label="Sessioni Hermes">/);
   assert.match(html, /<section hidden="" aria-label="Cronologia Pi e Orca">/);
   assert.match(html, /<section hidden="" aria-label="Desktop autorizzati">/);
-  assert.match(html, /Conversazioni dei Signori/);
-  assert.match(html, /Verifica dell&#x27;adapter Hermes in corso/);
+  assert.match(html, /Chat Hermes/);
+  assert.match(html, /richiede una Tailscale Service HTTPS con hostname distinto e autorizzato/);
+  assert.doesNotMatch(html, /<iframe\b/, "no Hermes iframe without isolated service configuration");
   assert.doesNotMatch(html, /Desktop remoto · Apache Guacamole/,
     "unvisited Desktop must not mount its adapter");
   assert.doesNotMatch(html, /href="\/agents"/, "Orca history stays embedded in Plancia");
@@ -61,7 +64,7 @@ test("App rende le chat nella voce Agenti, senza settima navigazione", () => {
     assert.doesNotMatch(content, /Desktop/);
   }
   assert.match(html, /aria-label="Sezioni Agenti"/);
-  assert.match(html, /Conversazioni dei Signori/);
+  assert.match(html, /Chat Hermes/);
   assert.match(html, /Pi · Orca/);
   assert.match(html, /aria-pressed="false"[^>]*>Desktop<\/button>/);
 });

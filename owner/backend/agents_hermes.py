@@ -16,6 +16,7 @@ import shutil
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from backend.auth import AuthPolicy, isolated_hermes_origin
 from backend.native_probe import SLOT as _SLOT
 
 
@@ -338,6 +339,12 @@ def _parse_export(output: str, session_id: str) -> list[dict]:
         return messages
     except (ValueError, TypeError, KeyError):
         raise _unavailable() from None
+
+
+@router.get("/api/v1/hermes/dashboard-config")
+async def hermes_dashboard_config() -> dict:
+    """An origin is published only if it cannot receive owner host-only cookies."""
+    return {"origin": isolated_hermes_origin(AuthPolicy.from_env())}
 
 
 @router.get("/api/v1/hermes/profiles")

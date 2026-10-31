@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import ipaddress
 import os
+import re
 import secrets
 import threading
 import time
@@ -26,6 +27,7 @@ TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
 SESSION_COOKIE = "__Host-controlcenter_session"
 CSRF_COOKIE = "__Host-controlcenter_csrf"
 CSRF_HEADER = "X-CSRF-Token"
+HERMES_DASHBOARD_ORIGIN_ENV = "PLANCIA_HERMES_DASHBOARD_ORIGIN"
 
 _BOOTSTRAP_PATHS = frozenset(
     {
@@ -296,6 +298,27 @@ def auth_failure_response(failure: AuthFailure) -> JSONResponse:
     )
 
 
+def isolated_hermes_origin(policy: AuthPolicy) -> str | None:
+    """Only a distinct HTTPS tailnet service may receive Hermes requests.
+
+    Browsers scope host-only cookies by hostname, not by TCP port.
+    """
+    configured = os.getenv(HERMES_DASHBOARD_ORIGIN_ENV, "").strip()
+    try:
+        parsed = urlsplit(configured)
+        hostname = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        return None
+    if (parsed.scheme != "https" or port not in (None, 443)
+            or parsed.username or parsed.password or parsed.path
+            or parsed.query or parsed.fragment
+            or not re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net", hostname, re.I)
+            or any(urlsplit(origin).hostname == hostname for origin in policy.allowed_origins)):
+        return None
+    return f"https://{hostname.lower()}"
+
+
 def _secure_response(response: Response, policy: AuthPolicy) -> Response:
     websocket_origins = " ".join(
         sorted(
@@ -304,6 +327,7 @@ def _secure_response(response: Response, policy: AuthPolicy) -> Response:
             if origin.startswith("https://")
         )
     )
+    hermes_frames = isolated_hermes_origin(policy)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -314,7 +338,9 @@ def _secure_response(response: Response, policy: AuthPolicy) -> Response:
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; base-uri 'none'; object-src 'none'; "
-        "frame-ancestors 'none'; img-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        f"frame-src 'self'{(' ' + hermes_frames) if hermes_frames else ''}; "
+        "img-src 'self' data:; "
         "script-src 'self'; style-src 'self' 'unsafe-inline'; "
         f"connect-src 'self'{(' ' + websocket_origins) if websocket_origins else ''}",
     )

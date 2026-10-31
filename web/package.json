@@ -23,7 +23,7 @@
     "test:profile-groups": "node --experimental-strip-types tests/profile-groups.test.ts && node --experimental-strip-types --test tests/profile-refresh.test.ts",
     "test:format": "node --experimental-strip-types tests/format.test.ts",
     "test:obsidian": "node --experimental-strip-types --test tests/obsidian-model.test.ts && node --test tests/obsidian-render.test.mjs",
-    "test:agents-remoting": "node --experimental-strip-types --test tests/agents-remoting-contract.test.ts"
+    "test:agents-remoting": "node --experimental-strip-types --test tests/agents-remoting-contract.test.ts tests/hermes-dashboard.test.ts"
   },
   "dependencies": {
     "@pelotech/guacamole-common-js": "1.6.0",

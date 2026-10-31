@@ -19,6 +19,9 @@ from backend.auth import (
     SESSION_TTL_ENV,
     TAILSCALE_LOGIN_HEADER,
     TRUSTED_PROXY_IPS_ENV,
+    HERMES_DASHBOARD_ORIGIN_ENV,
+    AuthPolicy,
+    isolated_hermes_origin,
     SessionStore,
     TailnetAuthMiddleware,
     admit_websocket,
@@ -164,6 +167,51 @@ class TestTailnetAuth(unittest.TestCase):
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertIn("wss://fleet.example.test", response.headers["content-security-policy"])
         self.assertNotIn("connect-src 'self' wss:;", response.headers["content-security-policy"])
+
+    def test_hermes_service_origin_is_distinct_and_disabled_by_default(self):
+        with patch.dict(os.environ, {ALLOWED_ORIGINS_ENV: (
+            ORIGIN + ",https://minipc.example.ts.net:8443"
+        )}, clear=False):
+            self.assertIsNone(isolated_hermes_origin(AuthPolicy.from_env()))
+            response = self.client().get("/", headers=IDENTITY_HEADERS)
+            self.assertNotIn("hermes-service", response.headers["content-security-policy"])
+            for unsafe in (
+                "https://minipc.example.ts.net:19443",
+                "https://minipc.example.ts.net",
+                "http://hermes-service.example.ts.net",
+                "https://hermes-service.example.ts.net:19443",
+                "https://hermes-service.example.ts.net/chat",
+                "https://hermes-service.example.ts.net.evil.example",
+                "https://hermes-service.example.ts.net?bad=yes",
+            ):
+                with patch.dict(os.environ, {HERMES_DASHBOARD_ORIGIN_ENV: unsafe}):
+                    self.assertIsNone(isolated_hermes_origin(AuthPolicy.from_env()), unsafe)
+                    denied = self.client().get("/", headers=IDENTITY_HEADERS)
+                    self.assertNotIn("frame-src 'self' https://", denied.headers["content-security-policy"])
+            with patch.dict(os.environ, {HERMES_DASHBOARD_ORIGIN_ENV:
+                                        "https://hermes-service.example.ts.net"}):
+                self.assertEqual(isolated_hermes_origin(AuthPolicy.from_env()),
+                                 "https://hermes-service.example.ts.net")
+                allowed = self.client().get("/", headers=IDENTITY_HEADERS)
+                self.assertIn("frame-src 'self' https://hermes-service.example.ts.net;",
+                              allowed.headers["content-security-policy"])
+                self.assertNotIn("https://minipc.example.ts.net:19443",
+                                 allowed.headers["content-security-policy"])
+
+    def test_browser_host_only_session_cookies_are_not_scoped_by_port(self):
+        with patch.dict(os.environ, {ALLOWED_ORIGINS_ENV:
+                                    "https://minipc.example.ts.net:8443"}):
+            client = TestClient(build_test_app(SessionStore()),
+                                base_url="https://minipc.example.ts.net:8443")
+            response = client.get("/", headers=IDENTITY_HEADERS)
+            self.assertEqual(response.status_code, 200)
+            original_host_different_port = client.build_request(
+                "GET", "https://minipc.example.ts.net:19443/chat")
+            self.assertIn(SESSION_COOKIE, original_host_different_port.headers.get("cookie", ""))
+            isolated_host = client.build_request(
+                "GET", "https://hermes-service.example.ts.net/chat")
+            self.assertNotIn(SESSION_COOKIE, isolated_host.headers.get("cookie", ""))
+            self.assertNotIn(CSRF_COOKIE, isolated_host.headers.get("cookie", ""))
 
     def test_spa_entry_and_legacy_paths_share_one_bootstrap_contract(self):
         # The SPA is reachable at both entries and bootstraps a session.

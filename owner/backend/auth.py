@@ -309,7 +309,7 @@ def _secure_response(response: Response, policy: AuthPolicy) -> Response:
     hermes_frames = " ".join(sorted({
         f"https://{urlsplit(origin).hostname}:19443"
         for origin in policy.allowed_origins
-        if origin.startswith("https://")
+        if origin.startswith("https://") and urlsplit(origin).port == 8443
         and (urlsplit(origin).hostname or "").endswith(".ts.net")
     }))
     response.headers.setdefault("X-Content-Type-Options", "nosniff")

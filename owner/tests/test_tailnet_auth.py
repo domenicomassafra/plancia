@@ -175,6 +175,12 @@ class TestTailnetAuth(unittest.TestCase):
         self.assertNotIn("https://fleet.example.test:19443", csp)
         self.assertEqual(response.headers["x-frame-options"], "DENY")
         self.assertIn("frame-ancestors 'none'", csp)
+        with patch.dict(os.environ, {ALLOWED_ORIGINS_ENV: (
+            ORIGIN + ",https://minipc-ubuntu.example.ts.net:9443"
+        )}):
+            other_port = self.client().get("/", headers=IDENTITY_HEADERS)
+        self.assertNotIn("https://minipc-ubuntu.example.ts.net:19443",
+                         other_port.headers["content-security-policy"])
 
     def test_spa_entry_and_legacy_paths_share_one_bootstrap_contract(self):
         # The SPA is reachable at both entries and bootstraps a session.

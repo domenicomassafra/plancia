@@ -1,8 +1,18 @@
+import { useEffect, useState } from "react";
+import { request } from "../lib/api";
 import { hermesDashboardUrl } from "../lib/hermes-dashboard";
 
 /** The native Hermes dashboard owns profile selection, websocket and session input. */
 export function HermesDashboardView() {
-  const url = typeof window === "undefined" ? null : hermesDashboardUrl(window.location);
+  const [origin, setOrigin] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    request<{ origin: string | null }>("/api/v1/hermes/dashboard-config")
+      .then((result) => { if (active) setOrigin(result.origin); })
+      .catch(() => { if (active) setOrigin(null); });
+    return () => { active = false; };
+  }, []);
+  const url = typeof window === "undefined" ? null : hermesDashboardUrl(window.location, origin);
   return (
     <section className="space-y-4" aria-label="App Hermes ufficiale">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -24,7 +34,7 @@ export function HermesDashboardView() {
         </div>
       ) : (
         <p role="status" className="rounded-xl border border-ink-700 bg-ink-900 p-5 text-sm text-ink-300">
-          L'app Hermes integrata è disponibile aprendo Plancia dall'URL HTTPS tailnet del MiniPC.
+          L'app Hermes integrata richiede una Tailscale Service HTTPS con hostname distinto e autorizzato.
         </p>
       )}
     </section>

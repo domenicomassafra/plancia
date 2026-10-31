@@ -41,7 +41,8 @@ test("Agenti integra chat Hermes/Orca e Desktop senza navigazione globale duplic
   assert.match(html, /<section hidden="" aria-label="Cronologia Pi e Orca">/);
   assert.match(html, /<section hidden="" aria-label="Desktop autorizzati">/);
   assert.match(html, /Chat Hermes/);
-  assert.match(html, /disponibile aprendo Plancia dall&#x27;URL HTTPS tailnet/);
+  assert.match(html, /richiede una Tailscale Service HTTPS con hostname distinto e autorizzato/);
+  assert.doesNotMatch(html, /<iframe\b/, "no Hermes iframe without isolated service configuration");
   assert.doesNotMatch(html, /Desktop remoto · Apache Guacamole/,
     "unvisited Desktop must not mount its adapter");
   assert.doesNotMatch(html, /href="\/agents"/, "Orca history stays embedded in Plancia");

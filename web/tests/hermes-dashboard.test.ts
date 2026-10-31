@@ -2,16 +2,29 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { hermesDashboardUrl } from "../src/lib/hermes-dashboard.ts";
 
-test("embed uses the official Hermes app on the same MiniPC tailnet host", () => {
-  assert.equal(hermesDashboardUrl({ protocol: "https:", hostname: "minipc.example.ts.net", port: "8443" }),
-    "https://minipc.example.ts.net:19443/chat");
+const PLANCIA = { protocol: "https:", hostname: "minipc.example.ts.net", port: "8443" };
+const HERMES = "https://hermes-service.example.ts.net";
+
+test("Hermes app requires an explicit HTTPS service with a different hostname", () => {
+  assert.equal(hermesDashboardUrl(PLANCIA, HERMES), HERMES + "/chat");
+  assert.equal(hermesDashboardUrl(PLANCIA, null), null);
+  assert.equal(hermesDashboardUrl(PLANCIA, "https://minipc.example.ts.net:19443"), null);
+  assert.equal(hermesDashboardUrl(PLANCIA, "https://minipc.example.ts.net"), null);
 });
 
-test("embed does not follow unexpected origins, ports or local development hosts", () => {
+test("no embed or link for unsafe sources, URL tricks, or non-tailnet Plancia", () => {
+  for (const origin of [
+    "http://hermes-service.example.ts.net",
+    "https://hermes-service.example.ts.net:19443",
+    "https://hermes-service.example.ts.net/chat",
+    "https://hermes-service.example.ts.net@attacker.example.com",
+    "https://hermes-service.example.ts.net.evil.example",
+    "https://hermes-service.example.ts.net?secret=yes",
+    "https://hermes-service.example.ts.net/#chat",
+  ]) assert.equal(hermesDashboardUrl(PLANCIA, origin), null, origin);
   for (const location of [
+    { protocol: "http:", hostname: PLANCIA.hostname, port: "8443" },
     { protocol: "https:", hostname: "other.example.com", port: "8443" },
-    { protocol: "http:", hostname: "minipc.example.ts.net", port: "8443" },
-    { protocol: "https:", hostname: "minipc.example.ts.net", port: "8888" },
-    { protocol: "https:", hostname: "attacker.ts.net.evil.example", port: "8443" },
-  ]) assert.equal(hermesDashboardUrl(location), null);
+    { protocol: "https:", hostname: PLANCIA.hostname, port: "9443" },
+  ]) assert.equal(hermesDashboardUrl(location, HERMES), null);
 });

@@ -26,7 +26,9 @@ _inventory_cache = ProfileInventoryCache()
 def _profile_runtime_label(host: ProfileHost) -> str:
     if host.host_id == "matebook":
         return "Omarchy"
-    if host.host_id in {"mac-studio", "macbook-air"}:
+    if host.host_id == "macbook-air" and host.runtime == "linux":
+        return "Omarchy"
+    if host.runtime == "darwin":
         return "macOS"
     if host.host_id == "minipc":
         return "Ubuntu"

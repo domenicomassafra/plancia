@@ -94,6 +94,7 @@ def _resolve_profile_hosts(registry_loader=None) -> dict[str, ProfileHost]:
             # the explicitly governed Omarchy runtime.
             if host.id != "matebook":
                 alias = host.ssh_alias
+                runtime = host.os
             defaults[host.id] = (label, alias, cmd, runtime, host.image or image)
 
     return {

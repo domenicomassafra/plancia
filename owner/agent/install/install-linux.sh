@@ -9,7 +9,7 @@ fi
 host_id=$1
 token_source=${2:-}
 case "$host_id" in
-  minipc|matebooklinux) ;;
+  minipc|matebooklinux|macbook-air) ;;
   *) echo "unsupported Linux fleet host id: $host_id" >&2; exit 64 ;;
 esac
 

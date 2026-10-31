@@ -43,6 +43,13 @@ class FleetIdentityTests(unittest.TestCase):
         ):
             self.assertEqual(current_host_id(), "macbook-air")
 
+    def test_dodomarchy_linux_hostname_resolves_to_air_fleet_id(self) -> None:
+        with (
+            patch.dict(os.environ, {"CHROME_PROFILES_HOST_ID": ""}),
+            patch("chrome_profile_launcher.fleet.socket.gethostname", return_value="dodomarchy"),
+        ):
+            self.assertEqual(current_host_id(), "macbook-air")
+
     def test_email_identity_is_case_insensitive(self) -> None:
         self.assertEqual(normalize_email("  Dodo@iCloud.com "), "dodo@icloud.com")
 

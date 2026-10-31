@@ -1,6 +1,15 @@
 from browser_profiles_test_support import *
+from types import SimpleNamespace
 
 class BrowserProfileAdapterTests(unittest.TestCase):
+    def test_linux_air_registry_drives_profile_runtime_and_alias(self):
+        fleet = SimpleNamespace(hosts=[SimpleNamespace(
+            id="macbook-air", ssh_alias="dodomarchy", os="linux", image=None,
+        )])
+        air = _resolve_profile_hosts(registry_loader=lambda: fleet)["macbook-air"]
+        self.assertEqual(air.alias, "dodomarchy")
+        self.assertEqual(air.runtime, "linux")
+
     def test_profile_host_resolution_fails_closed_when_registry_is_unavailable(self):
         with patch("backend.browser_profiles.load_registry", side_effect=RuntimeError("registry unavailable")):
             with self.assertRaisesRegex(RuntimeError, "registry unavailable"):

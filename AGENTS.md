@@ -7,7 +7,7 @@ The canonical repository is `domenicomassafra/plancia`. The shared contract at `
 - `web/` is the React/Vite UI, with traceable provenance from `domenicomassafra/controlcenter:dashboard/web/`. Read `PRODUCT.md`, `DESIGN.md`, and `web/PROVENANCE.md` before making changes. `web/src/lib/api.ts` uses the existing *same-origin* API with authenticated sessions, CSRF cookies, WebSockets, and governed receipts. Never add browser tokens or credentials to localStorage or Vite environment variables.
 - Do not restore the retired Muxin donor; preserve its history and licenses.
 - `owner/` contains FastAPI, authentication, FleetProbe, history, writer APIs, and owner adapters moved from `domenicomassafra/controlcenter:dashboard/` in #919. ControlCenter retains general Fleet/OmniRoute policy, host inventory, and `configs/plancia/` with private inventory and host commands. Databases, credentials, vaults, sessions, and Notion data must never enter public Git.
-- `web/` and `owner/` are both sources for Plancia's immutable release; the server delivers the authenticated bundle from that same release. ControlCenter no longer hosts a competing backend/dashboard checkout. Follow `DESIGN.md` for release preparation; the accountable issue author verifies installation, authenticated same-origin use, and rollback after the coordinator schedules integration.
+- `web/` and `owner/` are both sources for Plancia's immutable release; the server delivers the authenticated bundle from that same release. ControlCenter no longer hosts a competing backend/dashboard checkout. Follow `DESIGN.md` for release preparation; the accountable issue author verifies installation, authenticated same-origin use, and rollback after merge.
 
 ## Concurrent change ownership
 

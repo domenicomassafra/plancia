@@ -36,7 +36,7 @@ test("Agenti integra chat Hermes/Orca e Desktop senza navigazione globale duplic
   assert.match(html, /aria-pressed="false"[^>]*>Pi · Orca<\/button>/);
   assert.match(html, /aria-pressed="false"[^>]*>Desktop<\/button>/);
   assert.match(html, /role="region" aria-label="App Hermes"/);
-  assert.match(html, /<section aria-label="App Hermes">/);
+  assert.match(html, /<section class="space-y-4" aria-label="App Hermes ufficiale">/);
   assert.match(html, /<section hidden="" aria-label="Sessioni Hermes">/);
   assert.match(html, /<section hidden="" aria-label="Cronologia Pi e Orca">/);
   assert.match(html, /<section hidden="" aria-label="Desktop autorizzati">/);

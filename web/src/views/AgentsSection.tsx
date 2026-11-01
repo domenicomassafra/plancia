@@ -38,9 +38,7 @@ export function AgentsSection() {
         ))}
       </div>
       <div id="agents-content" role="region" aria-label={subView === "hermes-app" ? "App Hermes" : subView === "sessions" ? "Cronologia Hermes" : subView === "orca" ? "Chat Orca" : "Desktop Agenti"}>
-        <section hidden={subView !== "hermes-app"} aria-label="App Hermes">
-          {subView === "hermes-app" && <HermesDashboardView />}
-        </section>
+        {subView === "hermes-app" && <HermesDashboardView />}
         <section hidden={subView !== "sessions"} aria-label="Sessioni Hermes">
           {visited.has("sessions") && <AgentsSignoriView />}
         </section>

@@ -185,6 +185,52 @@ def test_macos_capacity_uses_only_bounded_marked_last_known_good(monkeypatch):
     monkeypatch.setattr(fleetprobe.time, "time", lambda: 221.0)
     assert fleetprobe._macos_available_capacity(mount) is None
 
+def test_macos_capacity_failure_budget_backoff_and_recovery(monkeypatch):
+    mount = "/System/Volumes/Data"
+    fleetprobe._MACOS_CAPACITY_CACHE.clear()
+    fleetprobe._MACOS_CAPACITY_NEXT_RETRY.clear()
+    fleetprobe._MACOS_CAPACITY_CACHE[mount] = (
+        940.0,
+        {"available_bytes": 700, "opportunistic_bytes": 200},
+    )
+    clock = {"wall": 1000.0, "mono": 100.0}
+    monkeypatch.setattr(fleetprobe.time, "time", lambda: clock["wall"])
+    monkeypatch.setattr(fleetprobe.time, "monotonic", lambda: clock["mono"])
+    monkeypatch.setattr(fleetprobe.shutil, "which", lambda name: f"/usr/bin/{name}")
+    calls = []
+    recovering = [False]
+
+    def fake_run(command, *, timeout):
+        calls.append((command[0], timeout))
+        if recovering[0]:
+            return True, "900\t300\n"
+        clock["wall"] += timeout
+        clock["mono"] += timeout
+        return False, "timeout"
+
+    monkeypatch.setitem(fleetprobe._macos_available_capacity.__globals__, "_run", fake_run)
+    result = fleetprobe._macos_available_capacity(mount)
+    assert result["refresh_stale"] is True
+    assert result["observed_age_s"] == 64.0
+    assert sum(timeout for _, timeout in calls) <= 4.0
+    assert calls[0][0] == "/usr/bin/osascript"
+    assert calls[1][0] == "/usr/bin/swift"
+    assert len(calls) == 2
+
+    clock["wall"] += 5
+    clock["mono"] += 5
+    assert fleetprobe._macos_available_capacity(mount)["observed_age_s"] == 69.0
+    assert len(calls) == 2
+
+    clock["wall"] += 10
+    clock["mono"] += 10
+    recovering[0] = True
+    result = fleetprobe._macos_available_capacity(mount)
+    assert result["available_bytes"] == 900
+    assert result["observed_age_s"] == 0.0
+    assert result["refresh_stale"] is False
+    assert len(calls) == 3
+    assert mount not in fleetprobe._MACOS_CAPACITY_NEXT_RETRY
 
 def test_ps_table_skips_the_collector_processes():
     output = """  PID %CPU %MEM COMM

@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { request } from "../lib/api";
-import { hermesDashboardUrl } from "../lib/hermes-dashboard";
+import { hermesDashboardUrl, loadHermesDashboardConfig } from "../lib/hermes-dashboard";
+import type { HermesDashboardConfig } from "../lib/hermes-dashboard";
 
 /** The native Hermes dashboard owns profile selection, websocket and session input. */
 export function HermesDashboardView() {
-  const [origin, setOrigin] = useState<string | null>(null);
+  const [config, setConfig] = useState<HermesDashboardConfig | null>(null);
   useEffect(() => {
     let active = true;
-    request<{ origin: string | null }>("/api/v1/hermes/dashboard-config")
-      .then((result) => { if (active) setOrigin(result.origin); })
-      .catch(() => { if (active) setOrigin(null); });
+    loadHermesDashboardConfig(() => request("/api/v1/hermes/dashboard-config"))
+      .then((result) => { if (active) setConfig(result); });
     return () => { active = false; };
   }, []);
-  const url = typeof window === "undefined" ? null : hermesDashboardUrl(window.location, origin);
+  const url = typeof window === "undefined" || config?.kind !== "ready"
+    ? null : hermesDashboardUrl(window.location, config.origin);
   return (
     <section className="space-y-4" aria-label="App Hermes ufficiale">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -32,6 +33,12 @@ export function HermesDashboardView() {
             loading="lazy" referrerPolicy="no-referrer"
             className="h-[min(76vh,960px)] min-h-[560px] w-full border-0" />
         </div>
+      ) : config === null ? (
+        <p role="status" className="text-sm text-ink-300">Verifica disponibilità dell'app Hermes…</p>
+      ) : config.kind === "error" || config.kind === "ready" ? (
+        <p role="alert" className="rounded-xl border border-ink-700 bg-ink-900 p-5 text-sm text-ink-300">
+          Impossibile verificare l'app Hermes. Controlla la connessione e ricarica la pagina.
+        </p>
       ) : (
         <p role="status" className="rounded-xl border border-ink-700 bg-ink-900 p-5 text-sm text-ink-300">
           L'app Hermes integrata richiede una Tailscale Service HTTPS con hostname distinto e autorizzato.

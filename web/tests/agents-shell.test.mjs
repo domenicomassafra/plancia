@@ -41,7 +41,8 @@ test("Agenti integra chat Hermes/Orca e Desktop senza navigazione globale duplic
   assert.match(html, /<section hidden="" aria-label="Cronologia Pi e Orca">/);
   assert.match(html, /<section hidden="" aria-label="Desktop autorizzati">/);
   assert.match(html, /Chat Hermes/);
-  assert.match(html, /richiede una Tailscale Service HTTPS con hostname distinto e autorizzato/);
+  assert.match(html, /Verifica disponibilità/,
+    "initial render must wait for the API before claiming the service is unconfigured");
   assert.doesNotMatch(html, /<iframe\b/, "no Hermes iframe without isolated service configuration");
   assert.doesNotMatch(html, /Desktop remoto · Apache Guacamole/,
     "unvisited Desktop must not mount its adapter");

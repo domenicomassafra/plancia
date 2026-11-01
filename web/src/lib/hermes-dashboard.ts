@@ -1,4 +1,24 @@
 /** The official Hermes app needs a separately named tailnet service for cookie isolation. */
+export type HermesDashboardConfig =
+  | { kind: "ready"; origin: string }
+  | { kind: "unconfigured" | "error"; origin: null };
+
+/** Keep API failures distinct from a successfully loaded, unconfigured Service. */
+export async function loadHermesDashboardConfig(
+  fetchConfig: () => Promise<{ origin: string | null }>,
+): Promise<HermesDashboardConfig> {
+  try {
+    const result = await fetchConfig();
+    if (result?.origin === null) return { kind: "unconfigured", origin: null };
+    if (typeof result?.origin === "string" && result.origin.length > 0) {
+      return { kind: "ready", origin: result.origin };
+    }
+  } catch {
+    // Auth/network errors must not be shown as missing host configuration.
+  }
+  return { kind: "error", origin: null };
+}
+
 export function hermesDashboardUrl(
   location: Pick<Location, "protocol" | "hostname" | "port">,
   configuredOrigin: string | null,

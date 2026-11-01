@@ -114,6 +114,9 @@ _MACOS_CAPACITY_CACHE: Dict[str, Tuple[float, Dict[str, int]]] = {}
 _MACOS_CAPACITY_TTL_S = 60.0
 _MACOS_CAPACITY_MAX_STALE_S = 120.0
 _MACOS_CAPACITY_RETRIES = 2
+_MACOS_CAPACITY_REFRESH_BUDGET_S = 4.0  # less than the five-second sampler interval
+_MACOS_CAPACITY_FAILURE_BACKOFF_S = 15.0
+_MACOS_CAPACITY_NEXT_RETRY: Dict[str, float] = {}
 
 
 def _macos_available_capacity(mount: str) -> Optional[Dict[str, Any]]:
@@ -134,16 +137,21 @@ def _macos_available_capacity(mount: str) -> Optional[Dict[str, Any]]:
             "observed_age_s": round(max(0.0, now - cached[0]), 1),
             "refresh_stale": False,
         }
+    def stale_sample() -> Optional[Dict[str, Any]]:
+        if cached:
+            age = max(0.0, time.time() - cached[0])
+            if age <= _MACOS_CAPACITY_MAX_STALE_S:
+                return {**cached[1], "observed_age_s": round(age, 1), "refresh_stale": True}
+        return None
+
+    if time.monotonic() < _MACOS_CAPACITY_NEXT_RETRY.get(mount, 0.0):
+        return stale_sample()
+    deadline = time.monotonic() + _MACOS_CAPACITY_REFRESH_BUDGET_S
     osascript = shutil.which("osascript")
     swift = shutil.which("swift")
     if not osascript and not swift:
-        if cached and now - cached[0] <= _MACOS_CAPACITY_MAX_STALE_S:
-            return {
-                **cached[1],
-                "observed_age_s": round(max(0.0, now - cached[0]), 1),
-                "refresh_stale": True,
-            }
-        return None
+        _MACOS_CAPACITY_NEXT_RETRY[mount] = time.monotonic() + _MACOS_CAPACITY_FAILURE_BACKOFF_S
+        return stale_sample()
     commands: List[Tuple[List[str], float]] = []
     if osascript:
         jxa_mount = json.dumps(mount)
@@ -174,7 +182,10 @@ print("\\(values.volumeAvailableCapacityForImportantUsage ?? -1)\\t\\(values.vol
         )
 
     for command, timeout in commands:
-        ok, output = _run(command, timeout=timeout)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        ok, output = _run(command, timeout=min(timeout, remaining))
         if not ok:
             continue
         fields = output.strip().split("\t")
@@ -189,14 +200,10 @@ print("\\(values.volumeAvailableCapacityForImportantUsage ?? -1)\\t\\(values.vol
             continue
         observed_at = time.time()
         _MACOS_CAPACITY_CACHE[mount] = (observed_at, result)
+        _MACOS_CAPACITY_NEXT_RETRY.pop(mount, None)
         return {**result, "observed_age_s": 0.0, "refresh_stale": False}
-    if cached and now - cached[0] <= _MACOS_CAPACITY_MAX_STALE_S:
-        return {
-            **cached[1],
-            "observed_age_s": round(max(0.0, now - cached[0]), 1),
-            "refresh_stale": True,
-        }
-    return None
+    _MACOS_CAPACITY_NEXT_RETRY[mount] = time.monotonic() + _MACOS_CAPACITY_FAILURE_BACKOFF_S
+    return stale_sample()
 
 
 def build_collector() -> Any:

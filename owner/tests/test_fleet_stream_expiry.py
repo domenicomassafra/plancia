@@ -1,5 +1,7 @@
 """A live fleet stream must stop at the exact owner-session boundary."""
 import asyncio
+from contextlib import nullcontext
+import json
 import os
 import time
 from unittest.mock import patch
@@ -19,7 +21,8 @@ from backend.fleet2.store import Store
 
 
 @pytest.mark.parametrize("cause", [
-    "expired", "revoked", "idle_timeout", "revoked_during_snapshot", "clock_corrected",
+    "expired", "revoked", "idle_timeout", "revoked_during_snapshot",
+    "revoked_during_encoding", "clock_corrected",
 ])
 def test_existing_fleet_websocket_never_sends_after_session_expiry_or_revocation(tmp_path, cause):
     now = [0.0]
@@ -62,33 +65,42 @@ def test_existing_fleet_websocket_never_sends_after_session_expiry_or_revocation
         OWNER_LOGIN_ENV: "owner@example.test",
         ALLOWED_ORIGINS_ENV: "https://fleet.example.test",
     }):
+        def revoke_during_encoding(*args, **kwargs):
+            sessions.clear()
+            return json.dumps(*args, **kwargs)
+
+        encoding_patch = (
+            patch("backend.fleet2.api.encode_json", side_effect=revoke_during_encoding)
+            if cause == "revoked_during_encoding" else nullcontext()
+        )
         with TestClient(app, base_url="https://fleet.example.test") as client:
             headers = {
                 TAILSCALE_LOGIN_HEADER: "owner@example.test",
                 "Origin": "https://fleet.example.test",
                 "Cookie": f"{SESSION_COOKIE}={token}",
             }
-            with client.websocket_connect("/api/stream", headers=headers) as websocket:
-                if cause == "revoked_during_snapshot":
-                    with pytest.raises(WebSocketDisconnect) as exc:
-                        websocket.receive_json()
-                    assert exc.value.code == 1008
-                else:
-                    assert websocket.receive_json()["data"]["seq"] == 0
-                    if cause == "clock_corrected":
-                        # The store's authoritative clock has moved backwards. A
-                        # monotonic wait timeout must not falsely expire this session.
-                        time.sleep(0.12)
-                        assert client.get("/fixture-tick").status_code == 200
-                        assert websocket.receive_json()["data"]["seq"] == 1
-                        now[0] = 61
-                    if cause == "expired":
-                        now[0] = 61
-                    elif cause == "revoked":
-                        sessions.clear()
-                    if cause != "idle_timeout":
-                        assert client.get("/fixture-tick").status_code == 200
-                    with pytest.raises(WebSocketDisconnect) as exc:
-                        websocket.receive_json()
-                    assert exc.value.code == 1008
+            with encoding_patch:
+                with client.websocket_connect("/api/stream", headers=headers) as websocket:
+                    if cause in ("revoked_during_snapshot", "revoked_during_encoding"):
+                        with pytest.raises(WebSocketDisconnect) as exc:
+                            websocket.receive_json()
+                        assert exc.value.code == 1008
+                    else:
+                        assert websocket.receive_json()["data"]["seq"] == 0
+                        if cause == "clock_corrected":
+                            # The store's authoritative clock has moved backwards. A
+                            # monotonic wait timeout must not falsely expire this session.
+                            time.sleep(0.12)
+                            assert client.get("/fixture-tick").status_code == 200
+                            assert websocket.receive_json()["data"]["seq"] == 1
+                            now[0] = 61
+                        if cause == "expired":
+                            now[0] = 61
+                        elif cause == "revoked":
+                            sessions.clear()
+                        if cause != "idle_timeout":
+                            assert client.get("/fixture-tick").status_code == 200
+                        with pytest.raises(WebSocketDisconnect) as exc:
+                            websocket.receive_json()
+                        assert exc.value.code == 1008
             assert poller.subscribed is False

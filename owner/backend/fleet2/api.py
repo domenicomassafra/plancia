@@ -1,6 +1,7 @@
 """Authenticated Signal Deck API: fleet stream, actions and bounded audit."""
 from __future__ import annotations
 import asyncio
+from json import dumps as encode_json
 from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import Field
@@ -71,10 +72,13 @@ def build_router(
             return False
 
         async def send_snapshot(payload: Dict[str, Any]) -> bool:
-            # Validate after creating the payload, directly before transmission.
+            # Build the whole frame before the final authorization check: even
+            # serialization can invoke code and invalidate the owner session.
+            frame = encode_json({"type": "snapshot", "data": payload},
+                                separators=(",", ":"), ensure_ascii=False)
             if not await session_valid():
                 return False
-            await websocket.send_json({"type": "snapshot", "data": payload})
+            await websocket.send({"type": "websocket.send", "text": frame})
             return True
 
         try:

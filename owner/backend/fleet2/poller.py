@@ -206,6 +206,7 @@ class FleetPoller:
         self._tailscale_status_fn = tailscale_status_fn or _query_tailscale_status
         self._ts_status_cache: Optional[Dict[str, Any]] = None
         self._ts_status_cache_ts: float = 0.0
+        self._ts_status_lock = asyncio.Lock()
         self.states: Dict[str, HostState] = {host.id: HostState() for host in registry.hosts}
         self._poll_locks: Dict[str, asyncio.Lock] = {host.id: asyncio.Lock() for host in registry.hosts}
         self._task: Optional[asyncio.Task] = None
@@ -223,12 +224,15 @@ class FleetPoller:
 
     async def _get_tailscale_status(self) -> Optional[Dict[str, Any]]:
         now = time.time()
-        if self._ts_status_cache is not None and (now - self._ts_status_cache_ts) < TAILSCALE_CACHE_TTL_S:
+        if (now - self._ts_status_cache_ts) < TAILSCALE_CACHE_TTL_S:
             return self._ts_status_cache
-        data = await asyncio.to_thread(self._tailscale_status_fn)
-        self._ts_status_cache = data
-        self._ts_status_cache_ts = now
-        return data
+        async with self._ts_status_lock:
+            if time.time() - self._ts_status_cache_ts < TAILSCALE_CACHE_TTL_S:
+                return self._ts_status_cache
+            data = await asyncio.to_thread(self._tailscale_status_fn)
+            self._ts_status_cache = data
+            self._ts_status_cache_ts = time.time()
+            return data
     # ------------------------------------------------------------- lifecycle
 
     def start(self) -> None:
@@ -289,6 +293,7 @@ class FleetPoller:
         hosts = [host for host in targets if host is not None]
         if force:
             self._ts_status_cache = None
+            self._ts_status_cache_ts = 0.0
         headers = {"Authorization": f"Bearer {self.token}"}
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=headers) as client:
             await asyncio.gather(

@@ -77,6 +77,25 @@ def test_peer_matching_by_ip_and_names():
     assert _peer_matches("100.99.99.99", "unrelated", "unrelated", node) is False
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", [{"Peer": {}}, None])
+async def test_tailscale_status_cache_miss_is_coalesced_across_hosts(tmp_path, status):
+    hosts = [_make_host(f"fixture-{index}") for index in range(5)]
+    registry = FleetRegistry(agent_port=9631, poll_interval_s=5, hosts=hosts)
+    calls = []
+
+    def fake_tailscale():
+        calls.append(True)
+        time.sleep(0.05)
+        return status
+
+    poller = FleetPoller(registry, Store(tmp_path / "tailscale.sqlite"), token="fixture",
+                         tailscale_status_fn=fake_tailscale)
+    results = await asyncio.gather(*(poller._get_tailscale_status() for _ in hosts))
+    assert results == [status] * 5
+    assert len(calls) == 1, "one cache miss must start only one native Tailscale probe"
+
+
 def test_match_tailscale_peer_against_self_and_peers():
     status = {
         "Self": {

@@ -172,8 +172,12 @@ def test_action_item_operation_reconciles_crashes_after_writer_mutation():
                 )
         inverse_writer.assert_called_once()
         assert (
-            app.state.store.receipt(operation["operation_id"])["outcome"] == "succeeded"
+            app.state.store.receipt(operation["operation_id"])["outcome"] == "rollback-running"
         )
+        # Crash recovery may reconcile the inverse postimage but must not
+        # re-admit another writer while the original attempt is in flight.
+        assert app.state.store.interrupt_abandoned_server_receipts() >= 1
+        assert app.state.store.receipt(operation["operation_id"])["outcome"] == "rollback-interrupted"
         inverse_row = {"id": request["row_id"], "properties": {"Status": "Not started"}}
         with (
             patch.object(workspace, "notion_row", return_value={"rows": [inverse_row]}),
@@ -421,7 +425,7 @@ def test_action_item_operation_reconciles_after_payload_persistence_before_close
                 raise AssertionError("simulated inverse close crash did not escape")
         inverse_writer.assert_called_once()
         receipt = app.state.store.receipt(operation["operation_id"])
-        assert receipt["outcome"] == "succeeded"
+        assert receipt["outcome"] == "rollback-running"
         assert (
             receipt["payload"]["rollback_registry_id"]
             == "rollback-registry-persisted-crash"
@@ -449,6 +453,9 @@ def test_action_item_operation_reconciles_after_payload_persistence_before_close
         app.state.store.update_receipt_payload(
             operation["operation_id"], receipt["payload"]
         )
+
+        assert app.state.store.interrupt_abandoned_server_receipts() == 1
+        assert app.state.store.receipt(operation["operation_id"])["outcome"] == "rollback-interrupted"
 
         inverse_row = {**applied_row, "properties": {"Status": "Not started"}}
         with (

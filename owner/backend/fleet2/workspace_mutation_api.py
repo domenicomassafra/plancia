@@ -88,7 +88,7 @@ def register_workspace_mutation_routes(router: APIRouter, store: Store) -> None:
                     status_code=409,
                     detail="idempotency_key già usata con un payload diverso",
                 )
-            if existing["outcome"] != "running" or "receipt_sha" in record:
+            if existing["outcome"] not in {"running", "interrupted"} or "receipt_sha" in record:
                 expected_sha = workspace.receipt_sha(
                     {
                         key: value
@@ -100,7 +100,7 @@ def register_workspace_mutation_routes(router: APIRouter, store: Store) -> None:
                     raise HTTPException(
                         status_code=409, detail="ricevuta action-item.edit non integra"
                     )
-            if existing["outcome"] == "running":
+            if existing["outcome"] in {"running", "interrupted"}:
                 try:
                     verified = await asyncio.to_thread(
                         workspace.verify_action_item_edit_post_fetch, record
@@ -287,16 +287,16 @@ def register_workspace_mutation_routes(router: APIRouter, store: Store) -> None:
                 f"action-item.edit applicato · Registry {result['registry_id']} · post-fetch verificato",
             )
         except RuntimeError as exc:
-            store.close_receipt(receipt_id, "failed", str(exc))
+            store.close_receipt(receipt_id, "interrupted", "writer outcome not verified")
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
-            store.close_receipt(receipt_id, "failed", str(exc))
+            store.close_receipt(receipt_id, "interrupted", "writer outcome not verified")
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             store.close_receipt(
                 receipt_id,
-                "failed",
-                "action-item.edit fallito; rollback del writer tentato",
+                "interrupted",
+                "writer outcome not verified",
             )
             raise HTTPException(
                 status_code=502,

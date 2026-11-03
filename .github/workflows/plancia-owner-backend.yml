@@ -38,9 +38,9 @@ jobs:
           FLEETPROBE_TOKEN: ci-fixture-only-never-production
         run: |
           "$RUNNER_TEMP/plancia-owner-venv/bin/python" -m pytest -q -p no:cacheprovider
-      - name: Test native agents browser client behavior
-        working-directory: owner
-        run: node --test tests/test_agents_live_ui.cjs
+      - name: Test native Orca browser client contract
+        working-directory: web
+        run: node --experimental-strip-types --test tests/orca-chat-contract.test.ts
       - name: Verify public source does not contain credentials
         run: |
           GOBIN="$RUNNER_TEMP" go install github.com/zricethezav/gitleaks/v8@v8.30.1

@@ -20,7 +20,7 @@ from .workspace_api import register_workspace_routes
 class ActionRequest(StrictRequest):
     confirmation: str = Field(default="", max_length=64)
     idempotency_key: str = Field(min_length=8, max_length=200)
-    preview_receipt_id: str = Field(min_length=8, max_length=100)
+    preview_receipt_id: str | None = Field(default=None, min_length=8, max_length=100)
 
 
 def build_router(

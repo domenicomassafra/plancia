@@ -477,7 +477,7 @@ def test_authenticated_dispatch_api_enforces_preview_and_returns_busy_receipt(tm
             original = {"confirmation": "CONFERMA", "idempotency_key": "api-reboot-one",
                         "preview_receipt_id": previews["reboot"]}
             assert client.post(action_path, headers=auth, json={
-                "confirmation": "CONFERMA", "idempotency_key": "api-missing-preview"
+                "confirmation": "CONFERMA", "preview_receipt_id": previews["reboot"]
             }).status_code == 422
             sent = client.post(action_path, headers=auth, json=original)
             assert sent.status_code == 200, sent.text
@@ -503,5 +503,11 @@ def test_authenticated_dispatch_api_enforces_preview_and_returns_busy_receipt(tm
                 time.sleep(0.01)
             assert current.json()["receipt"]["outcome"] == "dispatched"
             assert client.post(action_path + "/preview", headers=auth).status_code == 409
+            # Existing API consumers may omit the newly added preview ID on
+            # their first request. Subsequent actions still require a fresh one.
+            legacy = client.post("/api/actions/macbook-air/restart-agent", headers=auth, json={
+                "confirmation": "", "idempotency_key": "legacy-initial-restart",
+            })
+            assert legacy.status_code == 200, legacy.text
     finally:
         finish.set()

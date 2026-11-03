@@ -85,11 +85,18 @@ class Store:
             conn.execute("""
                 INSERT OR IGNORE INTO host_action_reservations
                     (host_id, receipt_id, action, lease_until)
-                SELECT host_id, id, action, started_at + 90
-                  FROM receipts
-                 WHERE action IN ('reboot', 'shutdown', 'restart-agent')
-                   AND outcome IN ('running', 'dispatched', 'interrupted')
-                 ORDER BY started_at DESC
+                SELECT older.host_id, older.id, older.action, older.started_at + 90
+                  FROM receipts older
+                 WHERE older.action IN ('reboot', 'shutdown', 'restart-agent')
+                   AND older.outcome IN ('running', 'dispatched', 'interrupted')
+                   AND NOT (older.action = 'restart-agent' AND EXISTS (
+                       SELECT 1 FROM receipts newer
+                        WHERE newer.host_id = older.host_id
+                          AND newer.action = 'restart-agent'
+                          AND newer.outcome = 'succeeded'
+                          AND newer.started_at > older.started_at
+                   ))
+                 ORDER BY older.started_at DESC
             """)
         if os.name == "posix":
             self.path.chmod(0o600)

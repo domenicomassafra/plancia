@@ -267,6 +267,25 @@ def test_upgraded_legacy_uncertain_power_receipt_requires_observed_later_boot(tm
     assert upgraded.receipt("historic-power")["outcome"] == "resolved"
 
 
+def test_legacy_agent_interruption_superseded_by_later_success_is_not_relocked(tmp_path):
+    store = make_store(tmp_path)
+    store.open_receipt("agent-old", "mac-studio", "restart-agent", {})
+    store.close_receipt("agent-old", "interrupted", "server restarted before outcome")
+    store.open_receipt("agent-new", "mac-studio", "restart-agent", {})
+    store.close_receipt("agent-new", "succeeded", "FleetProbe restarted")
+    with store._connect() as conn:
+        conn.execute("UPDATE receipts SET started_at = ? WHERE id = ?",
+                     (time.time() - 100, "agent-old"))
+
+    reopened = Store(store.path)
+    assert reopened.host_action_blocker("mac-studio") is None
+    # If a later restart attempt has an uncertain result, it must still block.
+    reopened.open_receipt("agent-newer", "mac-studio", "restart-agent", {})
+    reopened.close_receipt("agent-newer", "interrupted", "unknown outcome")
+    again = Store(store.path)
+    assert again.host_action_blocker("mac-studio") == "agent-newer"
+
+
 def test_profile_metadata_round_trips_and_updates_in_place(tmp_path):
     store = make_store(tmp_path)
     stored = store.set_profile_metadata(

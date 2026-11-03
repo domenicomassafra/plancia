@@ -11,6 +11,7 @@ import {
   osLabel,
   receiptActionLabel,
   receiptOutcomeLabel,
+  receiptOutcomeSeverity,
   relativeTime,
   thermalLabel,
   uptime,
@@ -382,9 +383,7 @@ export function HostDetail({ host, connectionOffline, receipts, onClose, onRecei
                       {receiptActionLabel(receipt.action)}
                     </span>
                     <span
-                      className={
-                        receipt.outcome === "failed" ? "text-signal-crit" : "text-signal-ok"
-                      }
+                      className={SEVERITY_TEXT[receiptOutcomeSeverity(receipt.outcome)]}
                     >
                       {receiptOutcomeLabel(receipt.outcome)}
                     </span>

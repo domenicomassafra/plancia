@@ -4,7 +4,7 @@ import asyncio
 from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import Field
-from backend.auth import admit_websocket
+from backend.auth import SESSION_COOKIE, admit_websocket
 from backend.browser_profiles import open_profile
 from . import workspace_sources
 from .audit import public_receipt as _public_receipt
@@ -61,10 +61,31 @@ def build_router(
         # successful path has to complete the handshake itself.
         await websocket.accept()
         queue = poller.subscribe()
+        async def session_valid() -> bool:
+            current, _ = session_store.resolve(
+                websocket.cookies.get(SESSION_COOKIE), websocket.state.principal
+            )
+            if current is websocket.state.owner_session:
+                return True
+            await websocket.close(code=1008, reason="session_expired")
+            return False
+
         try:
+            if not await session_valid():
+                return
             await websocket.send_json({"type": "snapshot", "data": poller.snapshot()})
             while True:
-                payload = await queue.get()
+                remaining = session_store.remaining_seconds(websocket.state.owner_session)
+                if remaining <= 0:
+                    await websocket.close(code=1008, reason="session_expired")
+                    return
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    await websocket.close(code=1008, reason="session_expired")
+                    return
+                if not await session_valid():
+                    return
                 await websocket.send_json({"type": "snapshot", "data": payload})
         except (WebSocketDisconnect, RuntimeError):
             pass

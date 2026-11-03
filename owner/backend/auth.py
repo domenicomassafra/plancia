@@ -140,6 +140,10 @@ class SessionStore:
         with self._lock:
             self._sessions.clear()
 
+    def remaining_seconds(self, session: OwnerSession) -> float:
+        """Bound a live socket to the same clock used for session expiry."""
+        return max(0.0, session.expires_at - self._clock())
+
     def _prune_expired(self) -> None:
         now = self._clock()
         expired = [key for key, session in self._sessions.items() if session.expires_at <= now]

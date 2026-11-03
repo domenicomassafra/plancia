@@ -272,7 +272,7 @@ class ControlCenterAgentBridge:
 
             try:
                 dispatched = await asyncio.to_thread(
-                    self.engine.dispatch, host, action_key, ""
+                    self.engine.dispatch, host, action_key, "", preview_receipt_id=preview_id
                 )
                 payload["dispatch_receipt_id"] = dispatched["receipt_id"]
                 self.store.update_receipt_payload(operation_id, payload)

@@ -7,6 +7,7 @@ survive in a file rather than in a browser tab.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS samples (
     battery     REAL,
     storage_available REAL,
     gpu         REAL,
+    boot_epoch  REAL,
     reachable   INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_samples_host_ts ON samples (host_id, ts);
@@ -42,6 +44,14 @@ CREATE TABLE IF NOT EXISTS receipts (
     payload     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_receipts_started ON receipts (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS host_action_reservations (
+    host_id     TEXT PRIMARY KEY,
+    receipt_id  TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    lease_until REAL NOT NULL,
+    baseline_boot_epoch REAL
+);
 
 CREATE TABLE IF NOT EXISTS profile_metadata (
     host_id     TEXT NOT NULL,
@@ -71,6 +81,16 @@ class Store:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
             self._migrate_samples(conn)
+            # Upgrade existing databases without clearing uncertain host actions.
+            conn.execute("""
+                INSERT OR IGNORE INTO host_action_reservations
+                    (host_id, receipt_id, action, lease_until)
+                SELECT host_id, id, action, started_at + 90
+                  FROM receipts
+                 WHERE action IN ('reboot', 'shutdown', 'restart-agent')
+                   AND outcome IN ('running', 'dispatched', 'interrupted')
+                 ORDER BY started_at DESC
+            """)
         if os.name == "posix":
             self.path.chmod(0o600)
 
@@ -78,7 +98,7 @@ class Store:
     def _migrate_samples(conn: sqlite3.Connection) -> None:
         """Apply small additive migrations to persistent MiniPC history in place."""
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(samples)").fetchall()}
-        for name in ("storage_available", "gpu"):
+        for name in ("storage_available", "gpu", "boot_epoch"):
             if name not in columns:
                 conn.execute(f"ALTER TABLE samples ADD COLUMN {name} REAL")
 
@@ -100,6 +120,7 @@ class Store:
 
     def record_sample(self, host_id: str, sample: Optional[Dict[str, Any]], reachable: bool) -> None:
         cpu = memory = disk = storage_available = gpu = temp = battery = None
+        boot_epoch = None
         if sample:
             cpu = (sample.get("cpu") or {}).get("percent")
             mem_block = sample.get("memory") or {}
@@ -123,11 +144,17 @@ class Store:
             gpu = (sample.get("gpu") or {}).get("utilization_percent")
             temp = (sample.get("thermal") or {}).get("cpu_c")
             battery = (sample.get("battery") or {}).get("percent")
+            uptime = sample.get("uptime_s")
+            sample_age = sample.get("sample_age_s", 0)
+            if (reachable and all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                                  and math.isfinite(value) for value in (uptime, sample_age))
+                    and uptime >= 0 and 0 <= sample_age <= 30):
+                boot_epoch = time.time() - uptime - sample_age
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT INTO samples"
-                " (host_id, ts, cpu, memory, disk, temp, battery, storage_available, gpu, reachable)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " (host_id, ts, cpu, memory, disk, temp, battery, storage_available, gpu, boot_epoch, reachable)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     host_id,
                     time.time(),
@@ -138,9 +165,34 @@ class Store:
                     battery,
                     storage_available,
                     gpu,
+                    boot_epoch,
                     1 if reachable else 0,
                 ),
             )
+            if boot_epoch is not None:
+                active = conn.execute(
+                    """SELECT a.receipt_id, a.baseline_boot_epoch, r.started_at
+                         FROM host_action_reservations a
+                         JOIN receipts r ON r.id = a.receipt_id
+                        WHERE a.host_id = ? AND a.action IN ('reboot', 'shutdown')
+                          AND r.outcome IN ('dispatched', 'interrupted')""",
+                    (host_id,),
+                ).fetchone()
+                if active and boot_epoch > (
+                    active["baseline_boot_epoch"]
+                    if active["baseline_boot_epoch"] is not None
+                    else active["started_at"]
+                ) + 10:
+                    conn.execute(
+                        """UPDATE receipts SET outcome = 'resolved', finished_at = ?,
+                           detail = 'fresh FleetProbe boot transition verified; original SSH outcome remains unproven'
+                           WHERE id = ?""",
+                        (time.time(), active["receipt_id"]),
+                    )
+                    conn.execute(
+                        "DELETE FROM host_action_reservations WHERE host_id = ? AND receipt_id = ?",
+                        (host_id, active["receipt_id"]),
+                    )
 
     def history(self, host_id: str, minutes: int = 60, points: int = 120) -> List[Dict[str, Any]]:
         since = time.time() - minutes * 60
@@ -179,7 +231,8 @@ class Store:
         with self._lock, self._connect() as conn:
             samples = conn.execute("DELETE FROM samples WHERE ts < ?", (sample_cutoff,))
             receipts = conn.execute(
-                "DELETE FROM receipts WHERE finished_at IS NOT NULL AND finished_at < ?",
+                "DELETE FROM receipts WHERE finished_at IS NOT NULL AND finished_at < ?"
+                " AND id NOT IN (SELECT receipt_id FROM host_action_reservations)",
                 (receipt_cutoff,),
             )
             return samples.rowcount + receipts.rowcount
@@ -205,12 +258,100 @@ class Store:
             )
             return cursor.rowcount == 1
 
+    def claim_host_action(
+        self,
+        receipt_id: str,
+        host_id: str,
+        action: str,
+        payload: Dict[str, Any],
+        preview_receipt_id: str | None = None,
+    ) -> tuple[str, str | None]:
+        """Reserve one host atomically across workers, keys and action types.
+
+        An expired lease is an uncertainty signal, never permission to dispatch.
+        Only a proven terminal outcome releases the host reservation.
+        """
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT host_id, action FROM receipts WHERE id = ?", (receipt_id,)
+            ).fetchone()
+            if existing:
+                if existing["host_id"] != host_id or existing["action"] != action:
+                    raise RuntimeError("idempotency receipt collision")
+                return "replayed", receipt_id
+
+            active = conn.execute(
+                "SELECT receipt_id FROM host_action_reservations WHERE host_id = ?", (host_id,)
+            ).fetchone()
+            if active:
+                return "busy", active["receipt_id"]
+
+            prior = conn.execute(
+                """SELECT MAX(finished_at) AS finished_at FROM receipts
+                    WHERE host_id = ? AND action IN ('reboot', 'shutdown', 'restart-agent')""",
+                (host_id,),
+            ).fetchone()
+            last_finished = prior["finished_at"]
+            if last_finished is not None and not preview_receipt_id:
+                return "preview_required", None
+            if preview_receipt_id:
+                preview = conn.execute(
+                    """SELECT action, started_at, payload FROM receipts
+                        WHERE id = ? AND host_id = ? AND outcome = 'dry-run'""",
+                    (preview_receipt_id, host_id),
+                ).fetchone()
+                if not preview or (last_finished is not None and preview["started_at"] <= last_finished):
+                    return "preview_required", None
+                if preview["action"] != f"{action}-preview":
+                    if preview["action"] != "agent-action-preview":
+                        return "preview_required", None
+                    try:
+                        bridge_preview = json.loads(preview["payload"] or "{}")
+                    except (ValueError, TypeError):
+                        return "preview_required", None
+                    if (bridge_preview.get("action_key") != action
+                            or not bridge_preview.get("apply_allowed")
+                            or float(bridge_preview.get("expires_at") or 0) < time.time()):
+                        return "preview_required", None
+
+            now = time.time()
+            latest_boot = conn.execute(
+                """SELECT boot_epoch FROM samples WHERE host_id = ? AND reachable = 1
+                     AND boot_epoch IS NOT NULL AND ts > ? ORDER BY ts DESC LIMIT 1""",
+                (host_id, now - 60),
+            ).fetchone()
+            conn.execute(
+                """INSERT INTO receipts (id, host_id, action, started_at, outcome, payload)
+                   VALUES (?, ?, ?, ?, 'running', ?)""",
+                (receipt_id, host_id, action, now, json.dumps(payload)),
+            )
+            conn.execute(
+                """INSERT INTO host_action_reservations
+                   (host_id, receipt_id, action, lease_until, baseline_boot_epoch)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (host_id, receipt_id, action, now + 90,
+                 latest_boot["boot_epoch"] if latest_boot else None),
+            )
+            return "claimed", None
+
+    def host_action_blocker(self, host_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT receipt_id FROM host_action_reservations WHERE host_id = ?", (host_id,)
+            ).fetchone()
+        return row["receipt_id"] if row else None
+
     def close_receipt(self, receipt_id: str, outcome: str, detail: str) -> None:
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE receipts SET finished_at = ?, outcome = ?, detail = ? WHERE id = ?",
                 (time.time(), outcome, detail[:4000], receipt_id),
             )
+            if outcome in {"succeeded", "failed"}:
+                conn.execute(
+                    "DELETE FROM host_action_reservations WHERE receipt_id = ?", (receipt_id,)
+                )
 
     def interrupt_abandoned_server_receipts(self) -> int:
         """Close server-owned receipts left running by a previous process.

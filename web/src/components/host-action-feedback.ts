@@ -14,6 +14,8 @@ export function hostActionFeedback(receipt: Pick<Receipt, "id" | "outcome">, act
       return { kind: "warn", text: `${actionLabel} interrotta; completamento non verificato. ${reference}` };
     case "dispatched":
       return { kind: "warn", text: `${actionLabel} inviata; completamento da verificare. ${reference}` };
+    case "resolved":
+      return { kind: "warn", text: `Host nuovamente avviato e verificato da FleetProbe; esito del comando ${actionLabel} non confermato. ${reference}` };
     default:
       return { kind: "warn", text: `${actionLabel}: esito ${receipt.outcome}; completamento da verificare. ${reference}` };
   }

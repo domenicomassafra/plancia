@@ -45,6 +45,7 @@ export function HostActions({ hostId, onReceiptsChanged }: HostActionsProps) {
       if (response.preview.mutation_count !== 0 || response.preview.status !== "dry-run") {
         throw new Error("Il server non ha confermato una preview senza mutazioni.");
       }
+      delete idempotencyKeys.current[key];
       setPreview({ key, receiptId: response.receipt_id });
       onReceiptsChanged();
     } catch (error) {
@@ -65,8 +66,7 @@ export function HostActions({ hostId, onReceiptsChanged }: HostActionsProps) {
     const idempotencyKey = idempotencyKeys.current[key] ?? crypto.randomUUID();
     idempotencyKeys.current[key] = idempotencyKey;
     try {
-      const dispatched = await api.dispatch(hostId, key, confirmation, idempotencyKey);
-      delete idempotencyKeys.current[key];
+      const dispatched = await api.dispatch(hostId, key, confirmation, idempotencyKey, preview.receiptId);
       setPreview(null);
       setConfirmation("");
       setFeedback({ kind: "warn", text: `Azione ${receiptActionLabel(key)} acquisita; verifico la ricevuta…` });

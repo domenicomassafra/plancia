@@ -49,8 +49,8 @@ class FakeEngine:
             },
         }
 
-    def dispatch(self, host, action_key, confirmation):
-        self.dispatched.append((host.id, action_key, confirmation))
+    def dispatch(self, host, action_key, confirmation, *, preview_receipt_id=None):
+        self.dispatched.append((host.id, action_key, confirmation, preview_receipt_id))
         return {"receipt_id": "dispatch-1", "host_id": host.id, "action": action_key}
 
 
@@ -141,7 +141,7 @@ async def test_bridge_safe_action_is_preview_bound_and_idempotent(tmp_path):
     second = await bridge.call("controlcenter_action_apply", request)
     assert first["replayed"] is False
     assert second["replayed"] is True
-    assert engine.dispatched == [("matebooklinux", "restart-agent", "")]
+    assert engine.dispatched == [("matebooklinux", "restart-agent", "", preview["preview_id"])]
 
 
 @pytest.mark.anyio

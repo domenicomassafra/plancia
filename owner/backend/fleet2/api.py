@@ -20,6 +20,7 @@ from .workspace_api import register_workspace_routes
 class ActionRequest(StrictRequest):
     confirmation: str = Field(default="", max_length=64)
     idempotency_key: str = Field(min_length=8, max_length=200)
+    preview_receipt_id: str = Field(min_length=8, max_length=100)
 
 
 def build_router(
@@ -140,6 +141,7 @@ def build_router(
                 action_key,
                 payload.confirmation,
                 idempotency_key=payload.idempotency_key,
+                preview_receipt_id=payload.preview_receipt_id,
             )
         except PermissionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

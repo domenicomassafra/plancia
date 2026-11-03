@@ -1,6 +1,8 @@
 """An action is offered only when the host proved it can run it unattended."""
 
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -192,6 +194,48 @@ def test_dispatch_idempotency_suppresses_duplicate_command(tmp_path, monkeypatch
     assert len(restart_commands) == 1
     assert receipt["payload"].get("idempotency_digest")
     assert key not in str(receipt["payload"])
+
+
+@pytest.mark.parametrize("first_action,second_action", [
+    ("reboot", "reboot"),
+    ("reboot", "shutdown"),
+    ("restart-agent", "restart-agent"),
+])
+def test_distinct_keys_cannot_dispatch_incompatible_host_actions_concurrently(
+    tmp_path, monkeypatch, first_action, second_action
+):
+    started = threading.Event()
+    finish = threading.Event()
+    issued = []
+
+    def fake_ssh(alias, command, **kwargs):
+        if "sudo -n -l" in command or "launchctl print" in command:
+            return FakeResult("rc=0")
+        issued.append(command)
+        started.set()
+        assert finish.wait(timeout=5), "fixture timed out waiting for second dispatch"
+        return FakeResult("done")
+
+    monkeypatch.setattr(actions_module, "run_ssh", fake_ssh)
+    registry = load_registry()
+    host = registry.get("mac-studio")
+    first = ActionEngine(registry, Store(tmp_path / "actions.sqlite3"))
+    second = ActionEngine(registry, Store(tmp_path / "actions.sqlite3"))
+    try:
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            original = workers.submit(first.dispatch, host, first_action, "CONFERMA",
+                                      idempotency_key="request-one-001").result(timeout=5)
+            assert started.wait(timeout=5)
+            with pytest.raises(PermissionError, match="già in corso|incerto"):
+                workers.submit(second.dispatch, host, second_action, "CONFERMA",
+                               idempotency_key="request-two-002").result(timeout=5)
+            retry = second.dispatch(host, first_action, "CONFERMA",
+                                    idempotency_key="request-one-001")
+            assert retry["replayed"] is True
+            assert retry["receipt_id"] == original["receipt_id"]
+            assert len(issued) == 1
+    finally:
+        finish.set()
 
 
 def test_idempotent_retry_returns_receipt_even_if_runtime_became_unreachable(tmp_path, monkeypatch):
@@ -386,3 +430,78 @@ def test_host_preview_requires_owner_csrf_and_writes_only_redacted_dry_run(tmp_p
         assert commands
         assert all("restart fleetprobe" not in command and "poweroff" not in command.split(" ")[:3]
                    and "shutdown -" not in command for command in commands)
+
+
+def test_authenticated_dispatch_api_enforces_preview_and_returns_busy_receipt(tmp_path, monkeypatch):
+    import os
+    import time
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from backend import server
+    from backend.auth import (ALLOWED_ORIGINS_ENV, CSRF_COOKIE, CSRF_HEADER,
+                              OWNER_LOGIN_ENV, TAILSCALE_LOGIN_HEADER)
+    from backend.runtime_config import STATE_DIR_ENV
+
+    started = threading.Event()
+    finish = threading.Event()
+    commands = []
+
+    def fake_ssh(alias, command, **kwargs):
+        if "sudo -n -l" in command or "launchctl print" in command:
+            return FakeResult("rc=0")
+        commands.append(command)
+        started.set()
+        assert finish.wait(timeout=5)
+        return FakeResult("accepted")
+
+    monkeypatch.setattr(actions_module, "run_ssh", fake_ssh)
+    origin = "https://fleet.example.test"
+    headers = {TAILSCALE_LOGIN_HEADER: "owner@example.test"}
+    try:
+        with patch.dict(os.environ, {
+            OWNER_LOGIN_ENV: "owner@example.test",
+            ALLOWED_ORIGINS_ENV: origin,
+            STATE_DIR_ENV: str(tmp_path),
+            "FLEETPROBE_TOKEN": "fixture-only-token",
+        }):
+            client = TestClient(server.create_app(), base_url=origin)
+            assert client.get("/api/v1/session", headers=headers).status_code == 200
+            auth = {**headers, "Origin": origin, CSRF_HEADER: client.cookies.get(CSRF_COOKIE)}
+            previews = {}
+            for action in ("reboot", "shutdown"):
+                response = client.post(f"/api/actions/mac-studio/{action}/preview", headers=auth)
+                assert response.status_code == 200, response.text
+                previews[action] = response.json()["receipt_id"]
+
+            action_path = "/api/actions/mac-studio/reboot"
+            original = {"confirmation": "CONFERMA", "idempotency_key": "api-reboot-one",
+                        "preview_receipt_id": previews["reboot"]}
+            assert client.post(action_path, headers=auth, json={
+                "confirmation": "CONFERMA", "idempotency_key": "api-missing-preview"
+            }).status_code == 422
+            sent = client.post(action_path, headers=auth, json=original)
+            assert sent.status_code == 200, sent.text
+            assert started.wait(timeout=5)
+            rejected = client.post("/api/actions/mac-studio/shutdown", headers=auth, json={
+                "confirmation": "CONFERMA", "idempotency_key": "api-shutdown-two",
+                "preview_receipt_id": previews["shutdown"],
+            })
+            assert rejected.status_code == 409
+            assert sent.json()["receipt_id"] in rejected.json()["detail"]
+            replay = client.post(action_path, headers=auth, json=original)
+            assert replay.status_code == 200
+            assert replay.json()["replayed"] is True
+            assert len(commands) == 1
+            row = client.get(f"/api/receipts/{sent.json()['receipt_id']}", headers=headers)
+            assert row.status_code == 200
+            assert row.json()["receipt"]["outcome"] == "running"
+            finish.set()
+            for _ in range(100):
+                current = client.get(f"/api/receipts/{sent.json()['receipt_id']}", headers=headers)
+                if current.json()["receipt"]["outcome"] != "running":
+                    break
+                time.sleep(0.01)
+            assert current.json()["receipt"]["outcome"] == "dispatched"
+            assert client.post(action_path + "/preview", headers=auth).status_code == 409
+    finally:
+        finish.set()

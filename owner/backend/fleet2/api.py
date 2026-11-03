@@ -70,23 +70,30 @@ def build_router(
             await websocket.close(code=1008, reason="session_expired")
             return False
 
-        try:
+        async def send_snapshot(payload: Dict[str, Any]) -> bool:
+            # Validate after creating the payload, directly before transmission.
             if not await session_valid():
+                return False
+            await websocket.send_json({"type": "snapshot", "data": payload})
+            return True
+
+        try:
+            if not await send_snapshot(poller.snapshot()):
                 return
-            await websocket.send_json({"type": "snapshot", "data": poller.snapshot()})
             while True:
-                remaining = session_store.remaining_seconds(websocket.state.owner_session)
-                if remaining <= 0:
-                    await websocket.close(code=1008, reason="session_expired")
-                    return
-                try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=remaining)
-                except asyncio.TimeoutError:
-                    await websocket.close(code=1008, reason="session_expired")
-                    return
                 if not await session_valid():
                     return
-                await websocket.send_json({"type": "snapshot", "data": payload})
+                remaining = session_store.remaining_seconds(websocket.state.owner_session)
+                if remaining <= 0:
+                    continue
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=min(remaining, 5.0))
+                except asyncio.TimeoutError:
+                    # Only the store's clock can expire a session; monotonic
+                    # wait timeouts may fire after a backward clock correction.
+                    continue
+                if not await send_snapshot(payload):
+                    return
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

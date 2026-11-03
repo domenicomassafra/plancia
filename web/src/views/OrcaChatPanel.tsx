@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { orcaScreen, orcaSearch, orcaSend, orcaTerminals, type OrcaSearchHit, type OrcaTerminal } from "../lib/orca-chat";
+import { orcaScreen, orcaSearch, orcaSend, orcaTerminals, type OrcaAttempt, type OrcaSearchHit, type OrcaTerminal } from "../lib/orca-chat";
 import { request } from "../lib/api";
 
 type Result<T> = { state: "loading" } | { state: "ready"; value: T } | { state: "error"; reason: string };
@@ -14,6 +14,7 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
   const [hits, setHits] = useState<Result<OrcaSearchHit[]>>({ state: "ready", value: [] });
   const [selectedHit, setSelectedHit] = useState<OrcaSearchHit | null>(null);
   const [draft, setDraft] = useState("");
+  const [attempts, setAttempts] = useState<Record<string, OrcaAttempt>>({});
   const [sending, setSending] = useState(false);
   const [sendState, setSendState] = useState("");
   const [refresh, setRefresh] = useState(0);
@@ -34,6 +35,11 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
     return () => controller.abort();
   }, [active, refresh]);
 
+  const selectedTerminal = terminals.state === "ready"
+    ? terminals.value.find((entry) => entry.handle === selectedHandle) : undefined;
+  const pending = selectedHandle ? attempts[selectedHandle] : undefined;
+  const changedProcess = Boolean(pending && pending.incarnationId !== selectedTerminal?.incarnationId);
+
   useEffect(() => {
     if (!active || !selectedHandle) return;
     let disposed = false;
@@ -43,7 +49,8 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
     const update = async () => {
       controller = new AbortController();
       try {
-        const value = await orcaScreen(selectedHandle, request, controller.signal);
+        const value = await orcaScreen({ handle: selectedHandle,
+          incarnationId: selectedTerminal?.incarnationId ?? null }, request, controller.signal);
         if (!disposed) setScreen({ state: "ready", value });
       } catch (error) {
         if (!disposed) setScreen({ state: "error", reason: errorText(error) });
@@ -57,10 +64,7 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
       controller?.abort();
       if (timeout) clearTimeout(timeout);
     };
-  }, [active, selectedHandle]);
-
-  const selectedTerminal = terminals.state === "ready"
-    ? terminals.value.find((entry) => entry.handle === selectedHandle) : undefined;
+  }, [active, selectedHandle, selectedTerminal?.incarnationId]);
   const doSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (query.trim().length < 2) return;
@@ -74,15 +78,21 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
   };
   const doSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedTerminal?.writable || sending || !draft.trim()) return;
+    if (!selectedTerminal?.writable || !selectedTerminal.incarnationId || sending || changedProcess
+      || !(pending?.text ?? draft).trim()) return;
+    const attempt = pending ?? { handle: selectedTerminal.handle, incarnationId: selectedTerminal.incarnationId,
+      retryRequest: crypto.randomUUID(), text: draft };
+    setAttempts((current) => ({ ...current, [attempt.handle]: attempt }));
     setSending(true);
     setSendState("");
     try {
-      const observed = await orcaSend(selectedTerminal.handle, draft, request);
+      const status = await orcaSend(attempt, request);
+      setAttempts((current) => { const next = { ...current }; delete next[attempt.handle]; return next; });
       setDraft("");
-      setSendState(observed ? "Invio osservato dal terminale" : "Invio accettato; conferma dal terminale ancora assente");
+      setSendState(status === "observed" ? "Invio osservato dal terminale"
+        : "Invio accettato; conferma dal terminale ancora assente");
     } catch (error) {
-      setSendState(`Invio da verificare sul terminale: ${errorText(error)}`);
+      setSendState(`Esito sconosciuto: ${errorText(error)}. Rileggi lo schermo; «Riprova stesso invio» conserva il request ID.`);
     } finally {
       setSending(false);
     }
@@ -103,6 +113,7 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
             <p className="px-1 text-xs leading-5 text-ink-400">Nessun terminale Orca attivo. Cerca una sessione Pi nella cronologia qui sotto.</p>}
           {terminals.state === "ready" && terminals.value.map((terminal) => (
             <button key={terminal.handle} type="button" aria-pressed={selectedHandle === terminal.handle}
+              disabled={sending}
               onClick={() => { setSelectedHit(null); setSelectedHandle(terminal.handle); setSendState(""); }}
               className={`mb-1 block min-h-11 w-full rounded-lg px-3 py-2 text-left hover:bg-ink-800 ${selectedHandle === terminal.handle ? "bg-ink-800 ring-1 ring-ink-600" : ""}`}>
               <span className="block truncate text-sm text-ink-100">{terminal.title}</span>
@@ -122,7 +133,8 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
           {hits.state === "loading" && <p className="text-xs text-ink-400">Ricerca in corso…</p>}
           {hits.state === "error" && <p role="status" className="text-xs text-ink-300">{hits.reason}</p>}
           {hits.state === "ready" && hits.value.map((hit, index) => (
-            <button type="button" key={`${hit.sessionId}-${index}`} onClick={() => { setSelectedHandle(null); setSelectedHit(hit); }}
+            <button type="button" key={`${hit.sessionId}-${index}`} disabled={sending}
+              onClick={() => { setSelectedHandle(null); setSelectedHit(hit); }}
               className={`block min-h-11 w-full rounded-lg p-3 text-left hover:bg-ink-800 ${selectedHit === hit ? "bg-ink-800 ring-1 ring-ink-600" : ""}`}>
               <span className="block truncate text-sm text-ink-100">{hit.title}</span>
               <span className="block text-xs text-ink-400">{hit.agent} · {hit.updatedAt || "Data non nota"}</span>
@@ -161,12 +173,17 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
         </div>
         <form onSubmit={(event) => { void doSend(event); }} className="border-t border-ink-700 p-4">
           <label htmlFor="orca-chat-draft" className="sr-only">Messaggio al terminale</label>
-          <textarea id="orca-chat-draft" rows={2} maxLength={2000} value={draft} onChange={(event) => setDraft(event.target.value)}
-            disabled={!selectedTerminal?.writable || sending} placeholder={selectedTerminal?.writable ? "Messaggio alla sessione attiva…" : "Invio disponibile solo su un terminale Orca con permesso di scrittura"}
+          <textarea id="orca-chat-draft" rows={2} maxLength={2000} value={pending?.text ?? draft} onChange={(event) => setDraft(event.target.value)}
+            readOnly={Boolean(pending)} disabled={!selectedTerminal?.writable || sending || changedProcess}
+            placeholder={selectedTerminal?.writable ? "Messaggio alla sessione attiva…" : "Invio disponibile solo su un terminale Orca con permesso di scrittura"}
             className="w-full resize-y rounded-xl border border-ink-700 bg-ink-950 p-3 text-sm text-ink-100 disabled:cursor-not-allowed disabled:opacity-60" />
           <div className="mt-2 flex items-center justify-between gap-3">
-            <p role="status" className="text-xs text-ink-400">{sendState || "Allegati e tool strutturati richiedono una API nativa abilitata."}</p>
-            <button type="submit" className="button-secondary min-h-11 shrink-0" disabled={!selectedTerminal?.writable || !draft.trim() || sending}>Invia</button>
+            <p role="status" className="text-xs text-ink-400">{changedProcess
+              ? "Processo Orca cambiato: retry bloccato. Verifica la sessione prima di inviare nuovi messaggi."
+              : sendState || "Allegati e tool strutturati richiedono una API nativa abilitata."}</p>
+            <button type="submit" className="button-secondary min-h-11 shrink-0"
+              disabled={!selectedTerminal?.writable || !(pending?.text ?? draft).trim() || sending || changedProcess}>
+              {pending ? "Riprova stesso invio" : "Invia"}</button>
           </div>
         </form>
       </section>

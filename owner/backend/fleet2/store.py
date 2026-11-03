@@ -212,6 +212,17 @@ class Store:
                 (time.time(), outcome, detail[:4000], receipt_id),
             )
 
+    def begin_receipt_rollback(self, receipt_id: str, action: str) -> bool:
+        """Durably admit one inverse writer, including across backend processes."""
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE receipts SET outcome = 'rollback-running', finished_at = NULL, "
+                "detail = 'rollback writer outcome pending' "
+                "WHERE id = ? AND action = ? AND outcome = 'succeeded'",
+                (receipt_id, action),
+            )
+            return cursor.rowcount == 1
+
     def interrupt_abandoned_server_receipts(self) -> int:
         """Close server-owned receipts left running by a previous process.
 
@@ -223,9 +234,11 @@ class Store:
             cursor = conn.execute(
                 """
                 UPDATE receipts
-                   SET finished_at = ?, outcome = 'interrupted',
+                   SET finished_at = ?,
+                       outcome = CASE WHEN outcome = 'rollback-running'
+                                      THEN 'rollback-interrupted' ELSE 'interrupted' END,
                        detail = 'server restarted before a terminal outcome was recorded'
-                 WHERE outcome = 'running'
+                 WHERE outcome IN ('running', 'rollback-running')
                    AND action NOT LIKE 'agent-%'
                 """,
                 (now,),

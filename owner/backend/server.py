@@ -21,7 +21,6 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from backend.agents_api import router as agents_router  # noqa: E402
 from backend.agents_hermes import router as hermes_router  # noqa: E402
 from backend.agents_live import router as agents_live_router  # noqa: E402
-from backend.codex_sessions import router as codex_sessions_router  # noqa: E402
 from backend.desktops import router as desktops_router  # noqa: E402
 from backend.workspace_silverbullet import router as silverbullet_router  # noqa: E402
 from backend.auth import SessionStore, TailnetAuthMiddleware  # noqa: E402
@@ -113,7 +112,6 @@ def create_app() -> FastAPI:
     app.include_router(agents_router)
     app.include_router(hermes_router)
     app.include_router(agents_live_router)
-    app.include_router(codex_sessions_router)
     app.include_router(desktops_router)
     app.include_router(silverbullet_router)
     app.include_router(omniroute_router)

@@ -12,11 +12,10 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter()
-_ASSETS = Path(__file__).resolve().parent / "agents"
 _HOSTS = {"minipc": None, "macbookair": "macbookair", "matebooklinux": "matebooklinux"}
 _RESULT_FIELDS = ("agent", "sessionId", "title", "cwd", "updatedAt", "messageCount")
 
@@ -86,16 +85,10 @@ async def search_history(query: str, host: str) -> dict:
     return await _orca(*args)
 
 
-@router.get("/agents", response_class=HTMLResponse)
-def agents_page() -> HTMLResponse:
-    return HTMLResponse(_ASSETS.joinpath("index.html").read_text(encoding="utf-8"),
-                        headers={"Cache-Control": "no-store"})
-
-
-@router.get("/agents/client.js")
-def agents_script() -> FileResponse:
-    return FileResponse(_ASSETS / "client.js", media_type="application/javascript",
-                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+@router.get("/agents")
+def agents_page() -> RedirectResponse:
+    return RedirectResponse(url="/#agents", status_code=307,
+                            headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/v1/agents/status")

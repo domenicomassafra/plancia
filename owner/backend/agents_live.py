@@ -19,6 +19,8 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 class TerminalInput(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
+    incarnation_id: str = Field(min_length=1, max_length=128)
+    retry_request: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]+$")
 
 
 async def _terminals() -> list[dict]:
@@ -48,7 +50,9 @@ async def list_live_terminals() -> dict:
          "title": str(entry.get("title") or "Sessione")[:120],
          "agent": str(entry.get("agentIdentity") or "unknown")[:40],
          "connected": entry.get("connected") is True and not entry.get("orphaned"),
-         "writable": entry.get("writable") is True and not entry.get("orphaned"),
+         "writable": entry.get("writable") is True and not entry.get("orphaned")
+         and isinstance(entry.get("incarnationId"), str) and bool(entry["incarnationId"]),
+         "incarnationId": entry.get("incarnationId") if isinstance(entry.get("incarnationId"), str) else None,
          "lastOutputAt": entry.get("lastOutputAt")}
         for entry in entries
     ]}
@@ -56,7 +60,7 @@ async def list_live_terminals() -> dict:
 
 @router.get("/api/v1/agents/terminals/{handle}/screen")
 async def live_screen(handle: str = Path(pattern=_HANDLE)) -> dict:
-    await _terminal(handle)
+    entry = await _terminal(handle)
     result = await _orca("terminal", "read", "--terminal", handle, "--screen")
     terminal = result.get("terminal")
     if not isinstance(terminal, dict):
@@ -67,18 +71,36 @@ async def live_screen(handle: str = Path(pattern=_HANDLE)) -> dict:
     if not isinstance(tail, list) or terminal.get("source") != "screen":
         raise HTTPException(503, "Orca rendered screen unavailable")
     lines = [line[:400] for line in tail[-100:] if isinstance(line, str)]
-    return {"handle": handle, "source": "screen", "text": "\n".join(lines)[-16000:],
+    return {"handle": handle, "incarnationId": entry.get("incarnationId"),
+            "source": "screen", "text": "\n".join(lines)[-16000:],
             "status": str(terminal.get("status") or "unknown")[:30]}
 
 
 @router.post("/api/v1/agents/terminals/{handle}/send")
 async def send_live_input(payload: TerminalInput, handle: str = Path(pattern=_HANDLE)) -> dict:
-    await _terminal(handle, writable=True)
+    entry = await _terminal(handle, writable=True)
+    if not entry.get("incarnationId") or entry["incarnationId"] != payload.incarnation_id:
+        raise HTTPException(409, "Terminal process changed or native retry unavailable")
     if not payload.text.strip() or _CONTROL.search(payload.text):
         raise HTTPException(422, "Invalid terminal input")
     result = await _orca("terminal", "send", "--terminal", handle,
-                         "--text", payload.text, "--enter", "--wait-submit", "2")
-    # A successful CLI receipt proves command acceptance, not a model reply.
-    # Never retry automatically after a transport error; inspect screen first.
-    return {"accepted": True, "handle": handle,
-            "submissionObserved": result.get("submissionObserved") is True}
+                         "--text", payload.text, "--enter", "--wait-submit", "2",
+                         "--retry-request", payload.retry_request)
+    send = result.get("send")
+    mutation = result.get("mutation")
+    prompt = send.get("prompt") if isinstance(send, dict) else None
+    stages = prompt.get("stages") if isinstance(prompt, dict) else None
+    # A CLI exit code alone does not prove admission; require the bound native receipt.
+    if (not isinstance(send, dict) or send.get("accepted") is not True
+            or send.get("handle") != handle or not isinstance(mutation, dict)
+            or mutation.get("requestId") != payload.retry_request
+            or not isinstance(mutation.get("replayed"), bool)
+            or not isinstance(prompt, dict)
+            or prompt.get("requestId") != payload.retry_request
+            or prompt.get("processIncarnation") != payload.incarnation_id
+            or not isinstance(stages, list) or "input_accepted" not in stages):
+        raise HTTPException(503, "Native Orca admission not confirmed")
+    observed = "submission_observed" in stages or "turn_started" in stages
+    return {"accepted": True, "handle": handle, "incarnationId": payload.incarnation_id,
+            "status": "observed" if observed else "accepted", "submissionObserved": observed,
+            "replayed": mutation["replayed"]}

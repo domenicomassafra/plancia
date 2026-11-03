@@ -18,6 +18,10 @@ test("Orca terminal inventory keeps the native handle and a server-controlled wr
   const terminals = await orcaTerminals(client);
   assert.equal(called[0], "/api/v1/agents/terminals");
   assert.equal(terminals[0].writable, false);
+  const legacy = await orcaTerminals(reply({ donor: "orca", terminals: [
+    { handle: "term_old", title: "Legacy", agent: "pi", connected: true, writable: true },
+  ] }));
+  assert.equal(legacy[0].writable, false, "no process identity means no safe native retry");
   await assert.rejects(orcaTerminals(reply({ donor: "fake", terminals: [] })), /incompatibile/);
   await assert.rejects(orcaTerminals(reply({ donor: "orca", terminals: [
     { handle: "../escape", agent: "pi", title: "bad" },
@@ -25,11 +29,14 @@ test("Orca terminal inventory keeps the native handle and a server-controlled wr
 });
 
 test("Live readback refuses another terminal's screen and unbounded payloads", async () => {
-  const valid = { handle: "term_a", source: "screen", text: "output incrementale" };
-  assert.equal(await orcaScreen("term_a", reply(valid)), valid.text);
-  await assert.rejects(orcaScreen("term_a", reply({ ...valid, handle: "term_b" })), /incompatibile/);
-  await assert.rejects(orcaScreen("term_a", reply({ ...valid, text: "x".repeat(16_001) })), /non valido/);
-  await assert.rejects(orcaScreen("../oops", reply(valid)), /Handle/);
+  const terminal = { handle: "term_a", incarnationId: "process-123", title: "Pi", agent: "pi",
+    connected: true, writable: true };
+  const valid = { handle: "term_a", incarnationId: "process-123", source: "screen", text: "output incrementale" };
+  assert.equal(await orcaScreen(terminal, reply(valid)), valid.text);
+  await assert.rejects(orcaScreen(terminal, reply({ ...valid, handle: "term_b" })), /cambiato/);
+  await assert.rejects(orcaScreen(terminal, reply({ ...valid, incarnationId: "other-process" })), /cambiato/);
+  await assert.rejects(orcaScreen(terminal, reply({ ...valid, text: "x".repeat(16_001) })), /non valido/);
+  await assert.rejects(orcaScreen({ ...terminal, handle: "../oops" }, reply(valid)), /non valido/);
 });
 
 test("Pi's native indexed session remains a search excerpt, not a fabricated transcript", async () => {
@@ -52,18 +59,45 @@ test("Pi's native indexed session remains a search excerpt, not a fabricated tra
   await assert.rejects(orcaSearch("git", reply({ host: "other", hits: [] })), /incompatibili/);
 });
 
-test("Native send is a single, bounded operation, with no client-side retry", async () => {
-  const calls: string[] = [];
+test("Native send retains request and process identity across caller retries", async () => {
+  const calls: { path: string; body: unknown }[] = [];
+  const attempt = { handle: "term_real", incarnationId: "process-123",
+    text: "ciao", retryRequest: "req_same_1234" };
   const client: OrcaRequester = async <T>(path, init) => {
-    calls.push(path);
+    calls.push({ path, body: JSON.parse(String(init?.body)) });
     assert.equal(init?.method, "POST");
-    assert.deepEqual(JSON.parse(String(init?.body)), { text: "ciao" });
-    return { handle: "term_real", accepted: true, submissionObserved: false } as T;
+    return { handle: "term_real", incarnationId: "process-123", accepted: true,
+      status: "accepted", submissionObserved: false } as T;
   };
-  assert.equal(await orcaSend("term_real", "ciao", client), false);
-  assert.equal(calls.length, 1);
-  await assert.rejects(orcaSend("term_real", "bad\u0000", client), /non valido/);
-  await assert.rejects(orcaSend("term_real", "x".repeat(2001), client), /non valido/);
-  assert.equal(calls.length, 1);
-  await assert.rejects(orcaSend("term_real", "ciao", reply({ handle: "another", accepted: true })), /confermato/);
+  assert.equal(await orcaSend(attempt, client), "accepted");
+  assert.equal(await orcaSend(attempt, client), "accepted");
+  const expected = { path: "/api/v1/agents/terminals/term_real/send", body: {
+    text: "ciao", incarnation_id: "process-123", retry_request: "req_same_1234",
+  } };
+  assert.deepEqual(calls, [expected, expected]);
+  await assert.rejects(orcaSend({ ...attempt, text: "bad\u0000" }, client), /non valido/);
+  await assert.rejects(orcaSend({ ...attempt, retryRequest: "!" }, client), /non valido/);
+  assert.equal(calls.length, 2);
+  await assert.rejects(orcaSend(attempt, reply({ handle: "another", accepted: true })), /confermato/);
+});
+
+test("Accepted-but-lost native input remains unknown until same-request replay is read back", async () => {
+  const attempt = { handle: "term_real", incarnationId: "process-123",
+    text: "fixture only", retryRequest: "req_stable_1234" };
+  const calls: unknown[] = [];
+  const admitted = new Set<string>();
+  const client: OrcaRequester = async <T>(_path, init) => {
+    const body = JSON.parse(String(init?.body));
+    calls.push(body);
+    admitted.add(body.retry_request);
+    if (calls.length === 1) throw new Error("503 after native acceptance");
+    return { handle: "term_real", incarnationId: "process-123", accepted: true,
+      status: "observed", submissionObserved: true, replayed: true } as T;
+  };
+  await assert.rejects(orcaSend(attempt, client), /503 after native acceptance/);
+  assert.equal(await orcaSend(attempt, client), "observed");
+  assert.deepEqual(calls, [{ text: "fixture only", incarnation_id: "process-123",
+    retry_request: "req_stable_1234" }, { text: "fixture only", incarnation_id: "process-123",
+    retry_request: "req_stable_1234" }]);
+  assert.equal(admitted.size, 1);
 });

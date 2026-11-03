@@ -7,7 +7,7 @@ import { OrcaChatPanel } from "./OrcaChatPanel";
 type AgentsSubView = "hermes-app" | "sessions" | "orca" | "desktop";
 
 /** Authorized native agent surfaces under Plancia's existing navigation. */
-export function AgentsSection() {
+export function AgentsSection({ active = true }: { active?: boolean }) {
   const [subView, setSubView] = useState<AgentsSubView>("hermes-app");
   const [visited, setVisited] = useState<Set<AgentsSubView>>(() => new Set(["hermes-app"]));
   const selectSubView = (next: AgentsSubView) => {
@@ -43,10 +43,10 @@ export function AgentsSection() {
           {visited.has("sessions") && <AgentsSignoriView />}
         </section>
         <section hidden={subView !== "orca"} aria-label="Cronologia Pi e Orca">
-          {visited.has("orca") && <OrcaChatPanel active={subView === "orca"} />}
+          {visited.has("orca") && <OrcaChatPanel active={active && subView === "orca"} />}
         </section>
         <section hidden={subView !== "desktop"} aria-label="Desktop autorizzati">
-          {visited.has("desktop") && <RemoteDesktopView active={subView === "desktop"} />}
+          {visited.has("desktop") && <RemoteDesktopView active={active && subView === "desktop"} />}
         </section>
       </div>
     </div>

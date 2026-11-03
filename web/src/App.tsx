@@ -282,7 +282,7 @@ export default function App() {
             ))}
           </section>
           <section hidden={view !== "agents"} aria-label="Agenti">
-            {visited.has("agents") && <AgentsSection />}
+            {visited.has("agents") && <AgentsSection active={view === "agents"} />}
           </section>
           <section hidden={view !== "profiles"}>
             {visited.has("profiles") && <ProfilesView active={view === "profiles"} initialFleet={profiles} onInventory={setProfiles} />}

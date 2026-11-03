@@ -70,6 +70,17 @@ test("App rende le chat nella voce Agenti, senza settima navigazione", () => {
   assert.match(html, /aria-pressed="false"[^>]*>Desktop<\/button>/);
 });
 
+test("la navigazione globale disattiva i consumer remoti delle sottosezioni Agenti", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const section = readFileSync("src/views/AgentsSection.tsx", "utf8");
+  assert.match(app, /<AgentsSection\s+active=\{view === "agents"\}\s*\/>/,
+    "a hidden Agenti section must stop its remote consumers");
+  assert.match(section, /<OrcaChatPanel\s+active=\{active && subView === "orca"\}\s*\/>/,
+    "Orca 2.5s polling must stop whenever its global section is hidden");
+  assert.match(section, /<RemoteDesktopView\s+active=\{active && subView === "desktop"\}\s*\/>/,
+    "Guacamole must disconnect when leaving the global Agenti section");
+});
+
 test("HostDetail riceve lo stato offline dalla connessione reale della shell", () => {
   const source = ts.createSourceFile("App.tsx", readFileSync("src/App.tsx", "utf8"),
     ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

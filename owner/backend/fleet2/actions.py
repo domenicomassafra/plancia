@@ -221,6 +221,9 @@ class ActionEngine:
         spec = ACTIONS.get(action_key)
         if spec is None:
             raise KeyError(f"unknown action {action_key}")
+        blocking_receipt = self.store.host_action_blocker(host.id)
+        if blocking_receipt:
+            raise PermissionError(f"Azione host già in corso o con esito incerto: ricevuta {blocking_receipt}")
         capability = self.capabilities(host, refresh=True)["actions"][action_key]
         if not capability["available"]:
             raise PermissionError(capability["reason"] or "action unavailable")
@@ -254,6 +257,7 @@ class ActionEngine:
         on_finished: Optional[Callable[[str], None]] = None,
         *,
         idempotency_key: str | None = None,
+        preview_receipt_id: str | None = None,
     ) -> Dict[str, Any]:
         spec = ACTIONS.get(action_key)
         if spec is None:
@@ -300,37 +304,37 @@ class ActionEngine:
         if spec.destructive and confirmation.strip().upper() != CONFIRMATION_WORD:
             raise ValueError(f"destructive actions require the typed word {CONFIRMATION_WORD}")
 
-        if idempotency_key is not None:
-            if receipt_id is None:
-                raise RuntimeError("idempotency receipt id was not derived")
-            if not self.store.claim_receipt(
-                receipt_id, host.id, action_key, receipt_payload
-            ):
-                existing = self.store.receipt(receipt_id)
-                if not existing or existing.get("host_id") != host.id or existing.get("action") != action_key:
-                    raise RuntimeError("idempotency receipt collision")
-                return {
-                    "receipt_id": receipt_id,
-                    "host_id": host.id,
-                    "action": action_key,
-                    "replayed": True,
-                    "outcome": existing.get("outcome"),
-                }
-        else:
-            receipt_id = uuid.uuid4().hex[:12]
-            self.store.open_receipt(
-                receipt_id,
-                host.id,
-                action_key,
-                receipt_payload,
+        receipt_id = receipt_id or uuid.uuid4().hex[:12]
+        claim, blocking_receipt = self.store.claim_host_action(
+            receipt_id, host.id, action_key, receipt_payload, preview_receipt_id
+        )
+        if claim == "replayed":
+            existing = self.store.receipt(receipt_id)
+            return {
+                "receipt_id": receipt_id,
+                "host_id": host.id,
+                "action": action_key,
+                "replayed": True,
+                "outcome": existing["outcome"] if existing else "interrupted",
+            }
+        if claim == "busy":
+            raise PermissionError(
+                f"Azione host già in corso o con esito incerto: ricevuta {blocking_receipt}"
             )
+        if claim == "preview_required":
+            raise PermissionError("Serve una nuova preview verificata per questa azione host")
         thread = threading.Thread(
             target=self._execute,
             args=(receipt_id, host, action_key, on_finished),
             name=f"action-{receipt_id}",
             daemon=True,
         )
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            # After the durable claim, failure to start cannot authorize a retry.
+            self.store.close_receipt(receipt_id, "interrupted", "dispatch thread did not start")
+            raise
         return {
             "receipt_id": receipt_id,
             "host_id": host.id,
@@ -378,14 +382,16 @@ class ActionEngine:
                     )
             elif result.ok:
                 self.store.close_receipt(receipt_id, "succeeded", detail or "completed")
+            elif result.failure in {"unreachable", "timeout", "transport"}:
+                self.store.close_receipt(receipt_id, "interrupted", detail or "remote outcome uncertain")
             else:
                 self.store.close_receipt(receipt_id, "failed", detail or "command failed")
         except Exception as exc:
             logger.exception("typed fleet action %s failed on %s", action_key, host.id)
             self.store.close_receipt(
                 receipt_id,
-                "failed",
-                f"{type(exc).__name__}: action execution failed",
+                "interrupted",
+                f"{type(exc).__name__}: action outcome unverified",
             )
         finally:
             if on_finished:

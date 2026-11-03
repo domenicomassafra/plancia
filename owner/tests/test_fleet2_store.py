@@ -211,6 +211,109 @@ def test_claim_receipt_allows_only_one_idempotent_owner(tmp_path):
     )
 
 
+def test_uncertain_power_action_requires_fresh_boot_evidence_before_next_preview(tmp_path):
+    store = make_store(tmp_path)
+    sample = linux_sample()
+    sample.update(uptime_s=2000.0, sample_age_s=0.0)
+    store.record_sample("mac-studio", sample, reachable=True)
+    assert store.claim_host_action("reboot-1", "mac-studio", "reboot", {}) == ("claimed", None)
+    store.close_receipt("reboot-1", "dispatched", "transport dropped")
+    assert store.host_action_blocker("mac-studio") == "reboot-1"
+
+    # A returned probe from the same boot is insufficient. An actual boot
+    # transition is required, never an expired reservation timer.
+    sample["uptime_s"] = 2001.0
+    store.record_sample("mac-studio", sample, reachable=True)
+    assert store.host_action_blocker("mac-studio") == "reboot-1"
+    sample["uptime_s"] = 10.0
+    store.record_sample("mac-studio", sample, reachable=True)
+    assert store.receipt("reboot-1")["outcome"] == "resolved"
+    assert store.host_action_blocker("mac-studio") is None
+
+    assert store.claim_host_action("reboot-2", "mac-studio", "reboot", {}) == ("preview_required", None)
+    store.open_receipt("preview-2", "mac-studio", "reboot-preview", {"mutation_count": 0})
+    store.close_receipt("preview-2", "dry-run", "mutation_count=0")
+    assert store.claim_host_action("reboot-2", "mac-studio", "reboot", {}, "preview-2") == ("claimed", None)
+
+
+def test_abandoned_host_reservation_remains_blocked_after_expired_lease(tmp_path):
+    store = make_store(tmp_path)
+    assert store.claim_host_action("reboot-1", "mac-studio", "reboot", {}) == ("claimed", None)
+    with store._connect() as conn:
+        conn.execute("UPDATE host_action_reservations SET lease_until = 1 WHERE host_id = 'mac-studio'")
+    assert store.interrupt_abandoned_server_receipts() == 1
+    restarted = Store(store.path)
+    assert restarted.receipt("reboot-1")["outcome"] == "interrupted"
+    assert restarted.claim_host_action("shutdown-2", "mac-studio", "shutdown", {}) == ("busy", "reboot-1")
+    assert restarted.claim_host_action("reboot-1", "mac-studio", "reboot", {}) == ("replayed", "reboot-1")
+
+
+def test_upgraded_legacy_uncertain_power_receipt_requires_observed_later_boot(tmp_path):
+    store = make_store(tmp_path)
+    store.open_receipt("historic-power", "mac-studio", "shutdown", {})
+    store.close_receipt("historic-power", "dispatched", "previous version")
+    with store._connect() as conn:
+        conn.execute("UPDATE receipts SET started_at = ? WHERE id = ?",
+                     (time.time() - 3600, "historic-power"))
+    upgraded = Store(store.path)
+    assert upgraded.host_action_blocker("mac-studio") == "historic-power"
+    sample = linux_sample()
+    sample.update(uptime_s=7200.0, sample_age_s=0.0)
+    upgraded.record_sample("mac-studio", sample, reachable=True)
+    assert upgraded.host_action_blocker("mac-studio") == "historic-power"
+    sample["uptime_s"] = 200.0
+    upgraded.record_sample("mac-studio", sample, reachable=True)
+    assert upgraded.host_action_blocker("mac-studio") is None
+    assert upgraded.receipt("historic-power")["outcome"] == "resolved"
+
+
+def test_legacy_agent_interruption_superseded_by_later_success_is_not_relocked(tmp_path):
+    store = make_store(tmp_path)
+    store.open_receipt("agent-old", "mac-studio", "restart-agent", {})
+    store.close_receipt("agent-old", "interrupted", "server restarted before outcome")
+    store.open_receipt("agent-new", "mac-studio", "restart-agent", {})
+    store.close_receipt("agent-new", "succeeded", "FleetProbe restarted")
+    with store._connect() as conn:
+        conn.execute("UPDATE receipts SET started_at = ? WHERE id = ?",
+                     (time.time() - 100, "agent-old"))
+
+    reopened = Store(store.path)
+    assert reopened.host_action_blocker("mac-studio") is None
+    # If a later restart attempt has an uncertain result, it must still block.
+    reopened.open_receipt("agent-newer", "mac-studio", "restart-agent", {})
+    reopened.close_receipt("agent-newer", "interrupted", "unknown outcome")
+    again = Store(store.path)
+    assert again.host_action_blocker("mac-studio") == "agent-newer"
+
+
+def test_uncertain_agent_restart_reconciles_on_fresh_verified_probe_after_grace(tmp_path):
+    store = make_store(tmp_path)
+    assert store.claim_host_action("restart-uncertain", "mac-studio", "restart-agent", {}) == ("claimed", None)
+    store.close_receipt("restart-uncertain", "interrupted", "SSH timeout; outcome unknown")
+
+    fresh = linux_sample()
+    fresh.update(host_id="mac-studio", schema=2, agent_version="2.1.4",
+                 sample_age_s=0.0, uptime_s=1000.0)
+    store.record_sample("mac-studio", fresh, reachable=True)
+    assert store.host_action_blocker("mac-studio") == "restart-uncertain"
+    with store._connect() as conn:
+        conn.execute("UPDATE receipts SET finished_at = ? WHERE id = ?",
+                     (time.time() - 90, "restart-uncertain"))
+    stale = dict(fresh, sample_age_s=20.0)
+    store.record_sample("mac-studio", stale, reachable=True)
+    assert store.host_action_blocker("mac-studio") == "restart-uncertain"
+    wrong_identity = dict(fresh, host_id="other-host")
+    store.record_sample("mac-studio", wrong_identity, reachable=True)
+    assert store.host_action_blocker("mac-studio") == "restart-uncertain"
+
+    store.record_sample("mac-studio", fresh, reachable=True)
+    assert store.host_action_blocker("mac-studio") is None
+    assert store.receipt("restart-uncertain")["outcome"] == "resolved"
+    reopened = Store(store.path)
+    assert reopened.host_action_blocker("mac-studio") is None
+    assert reopened.claim_host_action("new-restart", "mac-studio", "restart-agent", {}) == ("preview_required", None)
+
+
 def test_profile_metadata_round_trips_and_updates_in_place(tmp_path):
     store = make_store(tmp_path)
     stored = store.set_profile_metadata(

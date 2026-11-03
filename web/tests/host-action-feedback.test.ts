@@ -6,6 +6,7 @@ test("only a succeeded host receipt gets positive feedback", () => {
   for (const [outcome, kind] of [
     ["succeeded", "ok"],
     ["dispatched", "warn"],
+    ["resolved", "warn"],
     ["interrupted", "warn"],
     ["failed", "error"],
     ["running", "warn"],

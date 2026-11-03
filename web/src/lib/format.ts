@@ -59,6 +59,7 @@ const RECEIPT_OUTCOME_LABELS: Record<string, string> = {
   dispatched: "Inviata",
   running: "In corso",
   interrupted: "Interrotta",
+  resolved: "Host riconciliato",
   failed: "Fallita",
   "dry-run": "Solo anteprima",
   "manual-gate": "Conferma richiesta",
@@ -79,6 +80,7 @@ export function receiptOutcomeSeverity(outcome: string): Severity {
     case "succeeded": return "ok";
     case "failed": return "crit";
     case "dispatched":
+    case "resolved":
     case "running":
     case "interrupted":
     case "manual-gate": return "warn";

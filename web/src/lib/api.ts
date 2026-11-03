@@ -116,10 +116,10 @@ export const api = {
     request<{ receipt_id: string; preview: { status: "dry-run"; mutation_count: 0; requires_confirmation: boolean } }>(
       `/api/actions/${hostId}/${action}/preview`, { method: "POST" },
     ),
-  dispatch: (hostId: string, action: string, confirmation: string, idempotencyKey: string) =>
+  dispatch: (hostId: string, action: string, confirmation: string, idempotencyKey: string, previewReceiptId: string) =>
     request<{ receipt_id: string; replayed: boolean; outcome?: string }>(`/api/actions/${hostId}/${action}`, {
       method: "POST",
-      body: JSON.stringify({ confirmation, idempotency_key: idempotencyKey }),
+      body: JSON.stringify({ confirmation, idempotency_key: idempotencyKey, preview_receipt_id: previewReceiptId }),
     }),
   receipts: (limit = 100) => request<{ receipts: Receipt[] }>(`/api/receipts?limit=${Math.max(1, Math.min(200, limit))}`),
   receipt: (receiptId: string) =>

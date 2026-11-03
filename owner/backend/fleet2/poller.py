@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -41,10 +42,19 @@ TAILSCALE_BINARIES = (
 )
 
 
+def _finite_number(value: Any) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _sample_stale_budget(sample: Dict[str, Any] | None) -> float:
     """Allow slower governed samplers without making fresh data look stale."""
     interval = (sample or {}).get("sample_interval_s")
-    if not isinstance(interval, (int, float)) or isinstance(interval, bool) or interval <= 0:
+    if not _finite_number(interval) or interval <= 0:
         return STALE_AFTER_S
     return max(STALE_AFTER_S, min(300.0, float(interval) * 2.0 + 5.0))
 
@@ -142,8 +152,11 @@ def _validate_agent_sample(host: FleetHost, payload: Any) -> Dict[str, Any]:
     if not isinstance(payload.get("sampled_at"), str) or not payload["sampled_at"].strip():
         raise ValueError("sample timestamp missing")
     sample_age = payload.get("sample_age_s")
-    if not isinstance(sample_age, (int, float)) or isinstance(sample_age, bool) or sample_age < 0:
+    if not _finite_number(sample_age) or sample_age < 0:
         raise ValueError("sample age missing or invalid")
+    interval = payload.get("sample_interval_s")
+    if interval is not None and (not _finite_number(interval) or interval <= 0):
+        raise ValueError("sample interval invalid")
     if payload.get("os") not in {"linux", "darwin", "windows"}:
         raise ValueError(f"unsupported sample os {payload.get('os')!r}")
     for block in ("cpu", "memory"):
@@ -194,6 +207,7 @@ class FleetPoller:
         self._ts_status_cache: Optional[Dict[str, Any]] = None
         self._ts_status_cache_ts: float = 0.0
         self.states: Dict[str, HostState] = {host.id: HostState() for host in registry.hosts}
+        self._poll_locks: Dict[str, asyncio.Lock] = {host.id: asyncio.Lock() for host in registry.hosts}
         self._task: Optional[asyncio.Task] = None
         self._stopping = asyncio.Event()
         self._subscribers: set[asyncio.Queue] = set()
@@ -274,18 +288,22 @@ class FleetPoller:
         )
         hosts = [host for host in targets if host is not None]
         if force:
-            for host in hosts:
-                self.reset_backoff(host.id)
             self._ts_status_cache = None
         headers = {"Authorization": f"Bearer {self.token}"}
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=headers) as client:
             await asyncio.gather(
-                *(self._poll_host(client, host) for host in hosts),
+                *(self._poll_host(client, host, force=force) for host in hosts),
                 return_exceptions=False,
             )
         return self.snapshot()
 
-    async def _poll_host(self, client: httpx.AsyncClient, host: FleetHost) -> None:
+    async def _poll_host(self, client: httpx.AsyncClient, host: FleetHost, *, force: bool = False) -> None:
+        async with self._poll_locks[host.id]:
+            if force:
+                self.reset_backoff(host.id)
+            await self._poll_host_locked(client, host)
+
+    async def _poll_host_locked(self, client: httpx.AsyncClient, host: FleetHost) -> None:
         state = self.states[host.id]
         now = time.time()
         if now < state.next_poll:
@@ -402,7 +420,7 @@ class FleetPoller:
     # ------------------------------------------------------------ live stream
 
     def subscribe(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=1)
         self._subscribers.add(queue)
         return queue
 
@@ -417,9 +435,9 @@ class FleetPoller:
             try:
                 queue.put_nowait(payload)
             except asyncio.QueueFull:
-                # A slow tab must not slow the fleet down; it will catch up on
-                # the next tick.
-                pass
+                # Keep only the newest observation for slow browsers.
+                queue.get_nowait()
+                queue.put_nowait(payload)
 
 
 def _worst(severities: list[str]) -> str:

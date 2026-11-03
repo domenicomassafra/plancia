@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -154,6 +155,63 @@ def test_agent_sample_validation_rejects_missing_age():
     payload.pop("sample_age_s")
     with pytest.raises(ValueError, match="sample age"):
         _validate_agent_sample(host, payload)
+
+
+@pytest.mark.parametrize("age", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_sample_age_never_becomes_healthy(age):
+    host = _make_host("minipc")
+    sample = _sample_payload(host.id)
+    sample["sample_age_s"] = age
+    with pytest.raises(ValueError, match="sample age"):
+        _validate_agent_sample(host, sample)
+
+
+@pytest.mark.anyio
+async def test_explicit_refresh_cannot_be_overwritten_by_older_failed_poll(tmp_path: Path):
+    host = _make_host("fixture", agent_host="fixture.invalid", agent_ip="")
+    registry = FleetRegistry(agent_port=9631, poll_interval_s=5.0, hosts=[host])
+    poller = FleetPoller(registry, Store(tmp_path / "race.sqlite3"), token="fixture",
+                         tailscale_status_fn=lambda: None)
+    async def no_tailscale():
+        return None
+    poller._get_tailscale_status = no_tailscale
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class Client:
+        calls = 0
+
+        async def get(self, url):
+            self.calls += 1
+            if self.calls == 1:
+                entered.set()
+                await release.wait()
+                raise httpx.ConnectTimeout("older slow request timed out")
+            return httpx.Response(200, request=httpx.Request("GET", url),
+                                  json=_sample_payload(host.id))
+
+    client = Client()
+    old = asyncio.create_task(poller._poll_host(client, host))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    newest = asyncio.create_task(poller._poll_host(client, host, force=True))
+    await asyncio.sleep(0.01)
+    release.set()
+    await asyncio.gather(old, newest)
+    assert client.calls == 2
+    assert poller.states[host.id].reachable is True
+    assert poller.states[host.id].sample["cpu"]["percent"] == 15.2
+
+
+@pytest.mark.anyio
+async def test_slow_websocket_subscriber_gets_latest_snapshot(tmp_path: Path):
+    host = _make_host("fixture")
+    registry = FleetRegistry(agent_port=9631, poll_interval_s=5.0, hosts=[host])
+    poller = FleetPoller(registry, Store(tmp_path / "queue.sqlite3"), token="fixture")
+    queue = poller.subscribe()
+    for seq in range(queue.maxsize):
+        queue.put_nowait({"seq": seq})
+    poller.snapshot = lambda: {"seq": 99}
+    await poller._broadcast()
+    assert [queue.get_nowait()["seq"] for _ in range(queue.qsize())] == [99]
 
 
 @pytest.mark.anyio

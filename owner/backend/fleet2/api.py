@@ -1,10 +1,11 @@
 """Authenticated Signal Deck API: fleet stream, actions and bounded audit."""
 from __future__ import annotations
 import asyncio
+from json import dumps as encode_json
 from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import Field
-from backend.auth import admit_websocket
+from backend.auth import SESSION_COOKIE, admit_websocket
 from backend.browser_profiles import open_profile
 from . import workspace_sources
 from .audit import public_receipt as _public_receipt
@@ -61,11 +62,42 @@ def build_router(
         # successful path has to complete the handshake itself.
         await websocket.accept()
         queue = poller.subscribe()
+        async def session_valid() -> bool:
+            current, _ = session_store.resolve(
+                websocket.cookies.get(SESSION_COOKIE), websocket.state.principal
+            )
+            if current is websocket.state.owner_session:
+                return True
+            await websocket.close(code=1008, reason="session_expired")
+            return False
+
+        async def send_snapshot(payload: Dict[str, Any]) -> bool:
+            # Build the whole frame before the final authorization check: even
+            # serialization can invoke code and invalidate the owner session.
+            frame = encode_json({"type": "snapshot", "data": payload},
+                                separators=(",", ":"), ensure_ascii=False)
+            if not await session_valid():
+                return False
+            await websocket.send({"type": "websocket.send", "text": frame})
+            return True
+
         try:
-            await websocket.send_json({"type": "snapshot", "data": poller.snapshot()})
+            if not await send_snapshot(poller.snapshot()):
+                return
             while True:
-                payload = await queue.get()
-                await websocket.send_json({"type": "snapshot", "data": payload})
+                if not await session_valid():
+                    return
+                remaining = session_store.remaining_seconds(websocket.state.owner_session)
+                if remaining <= 0:
+                    continue
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=min(remaining, 5.0))
+                except asyncio.TimeoutError:
+                    # Only the store's clock can expire a session; monotonic
+                    # wait timeouts may fire after a backward clock correction.
+                    continue
+                if not await send_snapshot(payload):
+                    return
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

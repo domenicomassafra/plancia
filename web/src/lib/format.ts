@@ -73,6 +73,19 @@ export function receiptOutcomeLabel(outcome: string): string {
   return RECEIPT_OUTCOME_LABELS[outcome] ?? outcome;
 }
 
+/** Only a completed successful receipt can make an operation indicator green. */
+export function receiptOutcomeSeverity(outcome: string): Severity {
+  switch (outcome) {
+    case "succeeded": return "ok";
+    case "failed": return "crit";
+    case "dispatched":
+    case "running":
+    case "interrupted":
+    case "manual-gate": return "warn";
+    default: return "unknown";
+  }
+}
+
 export interface ReceiptEvidence {
   label: string;
   value: string;

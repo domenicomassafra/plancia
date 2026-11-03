@@ -1,4 +1,4 @@
-import { SEVERITY_BG, SEVERITY_TEXT, exactTimestamp, relativeTime, sampleAgeLabel, sourceReason } from "../lib/format";
+import { SEVERITY_BG, SEVERITY_TEXT, exactTimestamp, receiptOutcomeSeverity, relativeTime, sampleAgeLabel, sourceReason } from "../lib/format";
 import { overviewFleetStatus, overviewHostState, showCurrentMetrics } from "../lib/overview-state";
 import type {
   ControlCenterSummary,
@@ -276,7 +276,7 @@ export function OverviewView({
           <div className="divide-y divide-ink-800">
             {receipts.slice(0, 5).map((receipt) => (
               <div key={receipt.id} className="flex items-start gap-3 px-4 py-3">
-                <span className={`mt-1.5 h-2 w-2 rounded-full ${receipt.outcome === "failed" ? "bg-signal-crit" : receipt.outcome === "running" ? "bg-signal-warn" : "bg-signal-ok"}`} />
+                <span className={`mt-1.5 h-2 w-2 rounded-full ${SEVERITY_BG[receiptOutcomeSeverity(receipt.outcome)]}`} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ink-200">{receipt.action}</p>
                   <p className="mt-0.5 truncate text-[11px] text-ink-500">{receipt.host_id} · {relativeTime(receipt.started_at)}</p>

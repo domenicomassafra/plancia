@@ -10,6 +10,7 @@ import {
   metric,
   osLabel,
   receiptActionLabel,
+  receiptOutcomeSeverity,
   relativeTime,
   sampleAgeLabel,
   sourceReason,
@@ -238,11 +239,7 @@ export function FleetView({
                     <li key={receipt.id} className="flex items-start gap-3 px-4 py-3">
                       <span
                         className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                          receipt.outcome === "failed"
-                            ? "bg-signal-crit"
-                            : receipt.outcome === "running"
-                              ? "bg-signal-warn"
-                              : "bg-signal-ok"
+                          SEVERITY_BG[receiptOutcomeSeverity(receipt.outcome)]
                         }`}
                       />
                       <div className="min-w-0 flex-1">

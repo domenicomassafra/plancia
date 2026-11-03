@@ -178,23 +178,43 @@ class Store:
             )
             if boot_epoch is not None:
                 active = conn.execute(
-                    """SELECT a.receipt_id, a.baseline_boot_epoch, r.started_at
+                    """SELECT a.receipt_id, a.action, a.baseline_boot_epoch,
+                              r.started_at, r.finished_at, r.outcome
                          FROM host_action_reservations a
                          JOIN receipts r ON r.id = a.receipt_id
-                        WHERE a.host_id = ? AND a.action IN ('reboot', 'shutdown')
-                          AND r.outcome IN ('dispatched', 'interrupted')""",
+                        WHERE a.host_id = ? AND r.outcome IN ('dispatched', 'interrupted')""",
                     (host_id,),
                 ).fetchone()
-                if active and boot_epoch > (
-                    active["baseline_boot_epoch"]
-                    if active["baseline_boot_epoch"] is not None
-                    else active["started_at"]
-                ) + 10:
+                power_boot_proven = (
+                    active is not None and active["action"] in {"reboot", "shutdown"}
+                    and boot_epoch > (
+                        active["baseline_boot_epoch"]
+                        if active["baseline_boot_epoch"] is not None
+                        else active["started_at"]
+                    ) + 10
+                )
+                agent_healthy_after_grace = (
+                    active is not None and active["action"] == "restart-agent"
+                    and active["outcome"] == "interrupted"
+                    and active["finished_at"] is not None
+                    and time.time() >= active["finished_at"] + 60
+                    and sample.get("host_id") == host_id
+                    and sample.get("schema") == 2
+                    and isinstance(sample.get("agent_version"), str)
+                    and bool(sample["agent_version"].strip())
+                    and 0 <= sample_age <= 5
+                )
+                if power_boot_proven or agent_healthy_after_grace:
+                    reason = (
+                        "fresh FleetProbe boot transition verified; original SSH outcome remains unproven"
+                        if power_boot_proven
+                        else "fresh FleetProbe heartbeat after uncertainty; original restart outcome remains unproven"
+                    )
                     conn.execute(
                         """UPDATE receipts SET outcome = 'resolved', finished_at = ?,
-                           detail = 'fresh FleetProbe boot transition verified; original SSH outcome remains unproven'
+                           detail = ?
                            WHERE id = ?""",
-                        (time.time(), active["receipt_id"]),
+                        (time.time(), reason, active["receipt_id"]),
                     )
                     conn.execute(
                         "DELETE FROM host_action_reservations WHERE host_id = ? AND receipt_id = ?",

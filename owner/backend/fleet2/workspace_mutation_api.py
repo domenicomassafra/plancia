@@ -364,38 +364,73 @@ def register_workspace_mutation_routes(router: APIRouter, store: Store) -> None:
                 "receipt_id": payload.operation_id,
                 "receipt_sha": record.get("receipt_sha"),
             }
-        if receipt["outcome"] != "succeeded":
-            raise HTTPException(
-                status_code=409,
-                detail=f"action-item.edit non ripristinabile in stato {receipt['outcome']}",
-            )
         if record.get("idempotency_key") != payload.idempotency_key:
             raise HTTPException(
                 status_code=409,
                 detail="receipt non appartiene alla idempotency_key richiesta",
             )
+        if receipt["outcome"] not in {"succeeded", "rollback-interrupted"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"action-item.edit non ripristinabile in stato {receipt['outcome']}",
+            )
+        if receipt["outcome"] == "succeeded" and not await asyncio.to_thread(
+            store.begin_receipt_rollback, payload.operation_id, workspace.ACTION_ITEM_EDIT_OPERATION
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="action-item.edit rollback già acquisito da una richiesta concorrente",
+            )
         try:
             current = await asyncio.to_thread(workspace.notion_row, record["row_id"])
             current = current["rows"][0]
-        except (RuntimeError, ValueError, IndexError) as exc:
-            raise HTTPException(
-                status_code=409,
-                detail="action-item.edit senza post-fetch rollback riconciliabile",
-            ) from exc
-        before = record.get("before") or {}
-        if before and all(
-            current["properties"].get(name) == value for name, value in before.items()
-        ):
+            before = record.get("before") or {}
+            if before and all(
+                current["properties"].get(name) == value for name, value in before.items()
+            ):
+                record.update(
+                    {
+                        "rollback_registry_id": record.get("rollback_registry_id"),
+                        "rollback_post_fetch": {
+                            "row_id": record["row_id"],
+                            "properties": {
+                                name: current["properties"].get(name) for name in before
+                            },
+                        },
+                        "reconciled_rollback": "inverse-postimage",
+                    }
+                )
+                record["receipt_sha"] = workspace.receipt_sha(
+                    {key: value for key, value in record.items() if key != "receipt_sha"}
+                )
+                await asyncio.to_thread(
+                    store.update_receipt_payload, payload.operation_id, record
+                )
+                store.close_receipt(
+                    payload.operation_id,
+                    "rolled-back",
+                    "action-item.edit rollback riconciliato dal post-fetch; mutation_count=0",
+                )
+                return {
+                    "ok": True,
+                    "operation_type": workspace.ACTION_ITEM_EDIT_OPERATION,
+                    "operation_id": payload.operation_id,
+                    "status": "already-rolled-back",
+                    "mutation_count": 0,
+                    "rollback_registry_id": record.get("rollback_registry_id"),
+                    "receipt_id": payload.operation_id,
+                    "receipt_sha": record["receipt_sha"],
+                }
+            if receipt["outcome"] == "rollback-interrupted":
+                raise RuntimeError(
+                    "rollback incerto: postimage originale o modifiche successive; nessun nuovo writer automatico"
+                )
+            result = await asyncio.to_thread(workspace.rollback_notion_edit, record)
             record.update(
                 {
-                    "rollback_registry_id": record.get("rollback_registry_id"),
-                    "rollback_post_fetch": {
-                        "row_id": record["row_id"],
-                        "properties": {
-                            name: current["properties"].get(name) for name in before
-                        },
-                    },
-                    "reconciled_rollback": "inverse-postimage",
+                    "rollback_caller": rollback_caller,
+                    "rollback_registry_id": result["rollback_registry_id"],
+                    "rollback_post_fetch": result["post_fetch"],
                 }
             )
             record["receipt_sha"] = workspace.receipt_sha(
@@ -407,40 +442,16 @@ def register_workspace_mutation_routes(router: APIRouter, store: Store) -> None:
             store.close_receipt(
                 payload.operation_id,
                 "rolled-back",
-                "action-item.edit rollback riconciliato dal post-fetch; mutation_count=0",
+                f"action-item.edit ripristinato · Registry {result['rollback_registry_id']} · post-fetch verificato",
             )
-            return {
-                "ok": True,
-                "operation_type": workspace.ACTION_ITEM_EDIT_OPERATION,
-                "operation_id": payload.operation_id,
-                "status": "already-rolled-back",
-                "mutation_count": 0,
-                "rollback_registry_id": record.get("rollback_registry_id"),
-                "receipt_id": payload.operation_id,
-                "receipt_sha": record["receipt_sha"],
-            }
-        try:
-            result = await asyncio.to_thread(workspace.rollback_notion_edit, record)
-        except (RuntimeError, ValueError) as exc:
+        except (RuntimeError, ValueError, IndexError) as exc:
+            if receipt["outcome"] == "succeeded":
+                store.close_receipt(payload.operation_id, "rollback-interrupted", "rollback outcome not verified")
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        record.update(
-            {
-                "rollback_caller": rollback_caller,
-                "rollback_registry_id": result["rollback_registry_id"],
-                "rollback_post_fetch": result["post_fetch"],
-            }
-        )
-        record["receipt_sha"] = workspace.receipt_sha(
-            {key: value for key, value in record.items() if key != "receipt_sha"}
-        )
-        await asyncio.to_thread(
-            store.update_receipt_payload, payload.operation_id, record
-        )
-        store.close_receipt(
-            payload.operation_id,
-            "rolled-back",
-            f"action-item.edit ripristinato · Registry {result['rollback_registry_id']} · post-fetch verificato",
-        )
+        except Exception as exc:
+            if receipt["outcome"] == "succeeded":
+                store.close_receipt(payload.operation_id, "rollback-interrupted", "rollback outcome not verified")
+            raise HTTPException(status_code=502, detail="rollback outcome not verified") from exc
         return {
             **result,
             "operation_type": workspace.ACTION_ITEM_EDIT_OPERATION,

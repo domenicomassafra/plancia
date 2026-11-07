@@ -12,18 +12,21 @@ addresses. Production **must** set `PLANCIA_FLEET_CONFIG` to the installed,
 private host registry. The canonical inventory and host-local profile command
 paths are versioned in the private ControlCenter repository under
 `configs/plancia/` and are securely staged at `~/.config/plancia/` on MiniPC
-by ControlCenter's `tools/install-plancia-private-config.sh` before cutover.
+by ControlCenter's `tools/install-plancia-private-config.sh`.
 The systemd unit reads that private destination through its environment.
 `PLANCIA_PROFILE_COMMANDS_FILE` accepts an object mapping host IDs to absolute
 Profile Atlas executable paths; this file must remain private. The installed
 `FLEETPROBE_TOKEN_FILE`, owner auth environment, SQLite history and receipts stay
 on the host in their existing directories. Do not copy them into this repo.
 
-The proposed MiniPC systemd unit is `deploy/plancia-backend.service`, using
-`~/.local/share/plancia/current/owner/.venv/` and port 8000 behind the existing
-Tailscale Serve proxy. Build and test the frontend on Mac Studio, copy its
-verified `web/dist/` alongside `owner/`, then run
-`owner/deploy/prepare-release-runtime.sh` on the immutable MiniPC release.
+The installed MiniPC systemd **user** unit is `plancia-backend.service` (source:
+`deploy/plancia-backend.service`). Its working directory is
+`~/.local/share/plancia/current/owner`; it runs the adjacent `.venv/bin/python`
+on `127.0.0.1:8000` behind Tailscale Serve. The `current` symlink selects an
+immutable `~/.local/share/plancia/releases/<commit>/` containing both `owner/`
+and its verified `web/dist/`. Build and test the frontend on Mac Studio, ship
+the attested files together, and run `owner/deploy/prepare-release-runtime.sh`
+on the MiniPC release before selecting it.
 Dependency environments are keyed by the requirements digest under
 `~/.local/share/plancia/owner-venvs`, separate from historical dashboard venvs.
 
@@ -63,11 +66,22 @@ change. The `web/scripts/check-release.mjs` checker rejects missing PWA manifest
 service worker and icon assets. The installed `owner/fleetctl.py` must be run
 through its adjacent `owner/.venv/bin/python` with `PLANCIA_FLEET_CONFIG`
 pointing to the private installed inventory even outside systemd.
-The unit runs with no independent vault or database writer. Retain the existing
-`controlcenter-fleet-dashboard` release as rollback material until the new unit
-passes authenticated browser, API and FleetProbe checks. After an independent
-review and verified cutover, disable the old unit before enabling this one:
-only one process may bind port 8000 or poll the production SQLite history.
+The unit runs with no independent vault or database writer. The former
+`controlcenter-fleet-dashboard.service` is inactive; its retained release is
+historical rollback material from ControlCenter #919. Only one backend may bind
+port 8000 or poll the production SQLite history. Check the installed selector,
+user services and anonymous session boundary from Mac Studio:
+
+```sh
+ssh minipc 'systemctl --user is-active plancia-backend.service; readlink -f ~/.local/share/plancia/current; systemctl --user is-active controlcenter-fleet-dashboard.service || true; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/session'
+```
+
+Expect `active`, a path under `releases/<commit>/`, `inactive`, and HTTP `401`.
+Also verify authenticated same-origin UI/API and FleetProbe before promoting a
+new release. Record the previous `current` target before switching releases;
+rollback restores that immutable release selector, restarts
+`plancia-backend.service` and repeats the checks. If reverting to the historical
+ControlCenter service, stop Plancia first and verify only one backend is active.
 
 FleetProbe sources and platform installers now live in `agent/` within this
 directory. On each reachable host, install from a pinned Plancia checkout

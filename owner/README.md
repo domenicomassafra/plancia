@@ -106,6 +106,19 @@ in memory only, a restart revokes it, and every later turn then fails with
 Promote `CONTROLCENTER_HERMES_INPUT_ENABLED` only after this tool exits 0 and the
 owner browser has proven the same boundary through the authenticated origin.
 
+### Installed native input gate
+
+`deploy/plancia-backend.service` now ships
+`Environment=CONTROLCENTER_HERMES_INPUT_ENABLED=1`, so a release installed from
+this source exposes `attachable`/`sendable` on the owner API. The gate is not
+the only condition: `backend/agents_hermes.py` also requires the installed
+native interpreter (`~/.hermes/hermes-agent/venv/bin/python`), the native
+gateway client and `owner/backend/hermes_native_input.py`, and every
+attach/send revalidates the gateway instance, authority epoch and existing
+session. To return to the readback-only state, remove that `Environment=` line
+from the installed unit, run `systemctl --user daemon-reload` and restart
+`plancia-backend.service`: capabilities fall back to `readable` only.
+
 FleetProbe sources and platform installers now live in `agent/` within this
 directory. On each reachable host, install from a pinned Plancia checkout
 through the platform-specific script and verify its own runtime identity. An

@@ -21,6 +21,7 @@ TasksMax=128
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=CONTROLCENTER_OBSIDIAN_EDITING=1
+Environment=CONTROLCENTER_HERMES_INPUT_ENABLED=1
 Environment=CONTROLCENTER_DASHBOARD_STATE_DIR=%h/.local/state/controlcenter/dashboard-state
 Environment=CONTROLCENTER_TRUSTED_PROXY_IPS=100.64.0.0/10,fd7a:115c:a1e0::/48
 Environment=FLEETPROBE_TOKEN_FILE=%h/.config/controlcenter/secrets/fleetprobe-token

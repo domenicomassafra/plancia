@@ -83,6 +83,29 @@ rollback restores that immutable release selector, restarts
 `plancia-backend.service` and repeats the checks. If reverting to the historical
 ControlCenter service, stop Plancia first and verify only one backend is active.
 
+### Native Hermes input acceptance (#48)
+
+`tools/qa_native_input.py` records the interactive acceptance for one native
+session: attach, one nonce, the admission receipt, the marker inside the redacted
+export, and a reconnect that keeps the same session, gateway instance, authority
+epoch and gateway process. Run it on the Hermes host with the installed native
+interpreter and the installed release; it prints metadata only, never message
+text or credentials, and never reaches a provider:
+
+```sh
+~/.hermes/hermes-agent/venv/bin/python owner/tools/qa_native_input.py \
+    --profile signor-coding --create --wait 120
+```
+
+`--create` mints the synthetic QA session through the gateway on a route that
+cannot answer, so the turn starts and stores the marker without any inference;
+`--session` re-runs the checks on an existing one. Never create that session with
+`hermes chat --api-key`: a CLI launch pins a launch-only key the authority keeps
+in memory only, a restart revokes it, and every later turn then fails with
+`launch_credentials_unavailable` even though `session.resume` still succeeds.
+Promote `CONTROLCENTER_HERMES_INPUT_ENABLED` only after this tool exits 0 and the
+owner browser has proven the same boundary through the authenticated origin.
+
 FleetProbe sources and platform installers now live in `agent/` within this
 directory. On each reachable host, install from a pinned Plancia checkout
 through the platform-specific script and verify its own runtime identity. An

@@ -13,11 +13,13 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -368,6 +370,68 @@ class FleetPoller:
         state.next_poll = time.time() + self._compute_backoff(state.consecutive_failures)
         await asyncio.to_thread(self.store.record_sample, host.id, None, False)
     # -------------------------------------------------------------- read side
+
+    async def ports_snapshot(self) -> list[Dict[str, Any]]:
+        """On-demand authenticated FleetProbe inventory; stale hosts yield no links."""
+        views = {view["id"]: view for view in self.snapshot()["hosts"]}
+        headers = {"Authorization": f"Bearer {self.token}"}
+
+        async def read_host(client: httpx.AsyncClient, host: FleetHost) -> list[Dict[str, Any]]:
+            state = self.states[host.id]
+            view = views[host.id]
+            status = (
+                "pending" if host.offline else
+                "offline" if state.error == "peer offline on tailnet" else
+                "online" if view["reachable"] and not view["stale"] else "unknown"
+            )
+            base = {"host_id": host.id, "host_name": host.name, "status": status,
+                    "sampled_at": None, "tailnet": "not verified"}
+            empty = lambda: [{**base, "port": None, "bind": None, "protocol": "tcp",
+                              "process": None, "service": None, "web": False, "url": None, "links": []}]
+            if status != "online" or not state.url:
+                return empty()
+            try:
+                response = await client.get(f"{state.url}/ports")
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict) or payload.get("host_id") != host.id:
+                    raise ValueError("agent identity mismatch")
+                sampled_at = payload.get("sampled_at")
+                if not isinstance(sampled_at, str) or len(sampled_at) > 40:
+                    raise ValueError("missing ports sample time")
+                base["sampled_at"] = sampled_at
+                base["tailnet"] = payload.get("tailnet") if payload.get("tailnet") in {"on", "off"} else "not verified"
+                rows = []
+                raw_rows = payload.get("ports")
+                if not isinstance(raw_rows, list):
+                    raise ValueError("ports not a list")
+                for port in raw_rows[:128]:
+                    if not isinstance(port, dict) or type(port.get("port")) is not int or not 1 <= port["port"] <= 65535:
+                        continue
+                    bind = port.get("bind")
+                    if not isinstance(bind, str) or not re.fullmatch(r"[0-9a-fA-F:.%*]{1,64}", bind):
+                        continue
+                    raw_url = port.get("url")
+                    url = None
+                    if port.get("web") is True and base["tailnet"] == "on" and isinstance(raw_url, str):
+                        parsed = urlsplit(raw_url)
+                        if (parsed.scheme == "https" and parsed.hostname and
+                            re.fullmatch(r"[a-zA-Z0-9.-]+\.ts\.net", parsed.hostname) and
+                            not (parsed.username or parsed.password or parsed.query or parsed.fragment) and
+                            parsed.path in {"", "/"} and (parsed.port is None or 0 < parsed.port <= 65535)):
+                            url = raw_url
+                    rows.append({**base, "port": port["port"], "bind": bind, "protocol": "tcp",
+                                 "process": None, "service": None, "web": url is not None,
+                                 "url": url, "links": [{"scope": "tailnet", "url": url}] if url else []})
+                if rows:
+                    return rows
+            except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+                pass
+            return empty()
+
+        async with httpx.AsyncClient(timeout=4.0, headers=headers) as client:
+            groups = await asyncio.gather(*(read_host(client, host) for host in self.registry.hosts))
+        return [row for group in groups for row in group]
 
     def snapshot(self) -> Dict[str, Any]:
         hosts = []

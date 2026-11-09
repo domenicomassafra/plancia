@@ -1,5 +1,6 @@
 import { DeviceImage } from "../components/DeviceImage";
 import { Sparkline } from "../components/Sparkline";
+import { ServicesPorts } from "../components/ServicesPorts";
 import { overviewFleetStatus, overviewHostState, showCurrentMetrics } from "../lib/overview-state";
 import {
   SEVERITY_BG,
@@ -258,6 +259,7 @@ export function FleetView({
           </div>
         </aside>
       </div>
+      <ServicesPorts hosts={snapshot.hosts} connectionOffline={connectionOffline} />
     </div>
   );
 }

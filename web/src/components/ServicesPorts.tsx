@@ -24,6 +24,20 @@ function isVerifiedUrl(row: FleetPort): boolean {
   }
 }
 
+export function currentPortRows(rows: FleetPort[], hosts: HostView[]): FleetPort[] {
+  const live = new Map(hosts.map((host) => [host.id, host]));
+  return rows.map((row) => {
+    const host = live.get(row.host_id);
+    const sampledAt = row.sampled_at ? Date.parse(row.sampled_at) : NaN;
+    const recent = Number.isFinite(sampledAt) && Math.abs(Date.now() - sampledAt) <= 90_000;
+    if (host?.lifecycle === "managed" && host.reachable && !host.stale && recent) return row;
+    return {
+      ...row, status: host?.lifecycle === "pending" ? "pending" : row.status === "offline" ? "offline" : "unknown",
+      web: false, url: null, links: [],
+    };
+  });
+}
+
 export function PortsDirectoryRows({ rows, hostFilter, scopeFilter, stateFilter }: {
   rows: FleetPort[];
   hostFilter: string;
@@ -35,7 +49,7 @@ export function PortsDirectoryRows({ rows, hostFilter, scopeFilter, stateFilter 
     (stateFilter === "all" || row.status === stateFilter) &&
     (scopeFilter === "all" ||
       (scopeFilter === "localhost" && isLocal(row.bind)) ||
-      (scopeFilter === "lan" && !!row.bind && !isLocal(row.bind)) ||
+      (scopeFilter === "lan" && row.links.some((link) => link.scope === "lan")) ||
       (scopeFilter === "tailnet" && isVerifiedUrl(row)))
   );
 
@@ -58,6 +72,12 @@ export function PortsDirectoryRows({ rows, hostFilter, scopeFilter, stateFilter 
             <p className="mt-1 break-words text-xs text-ink-400">
               {row.sampled_at ? `Campione ${row.sampled_at}` : "Campione non verificabile"} · Tailscale {row.tailnet}
             </p>
+            {row.truncated && <p className="mt-1 text-xs text-ink-300">Inventario parziale: limite di porte raggiunto.</p>}
+            {row.links.filter((link) => link.scope !== "tailnet").map((link) => (
+              <p key={`${link.scope}:${link.url}`} className="mt-1 break-all text-xs text-ink-400">
+                {link.scope === "server-local" ? "Solo sul server" : "LAN, accessibilità client non verificata"}: {link.url}
+              </p>
+            ))}
             {url ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="min-w-0 flex-1 break-all text-xs text-ink-300">{url}</span>
@@ -67,7 +87,7 @@ export function PortsDirectoryRows({ rows, hostFilter, scopeFilter, stateFilter 
                 }}>Copia link</button>
               </div>
             ) : (
-              <p className="mt-2 text-xs text-ink-400">Non verificato · nessun URL apribile</p>
+              <p className="mt-2 text-xs text-ink-400">Nessun URL tailnet verificato e apribile da iPad</p>
             )}
           </li>
         );
@@ -84,6 +104,12 @@ export function ServicesPorts({ hosts, connectionOffline }: { hosts: HostView[];
   const [hostFilter, setHostFilter] = useState("all");
   const [scopeFilter, setScopeFilter] = useState<Filter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+
+  useEffect(() => {
+    if (connectionOffline) return;
+    const timer = window.setInterval(() => setRefresh((n) => n + 1), 45_000);
+    return () => window.clearInterval(timer);
+  }, [connectionOffline]);
 
   useEffect(() => {
     if (connectionOffline) return;
@@ -136,7 +162,7 @@ export function ServicesPorts({ hosts, connectionOffline }: { hosts: HostView[];
       {connectionOffline ? <p role="status" className="text-sm text-ink-300">Control plane offline: nessun link verificabile.</p> :
         error ? <p role="alert" className="text-sm text-ink-300">{error}</p> :
           loading && !rows.length ? <p role="status" className="text-sm text-ink-300">Caricamento porte…</p> :
-            <PortsDirectoryRows rows={rows} hostFilter={hostFilter} scopeFilter={scopeFilter} stateFilter={stateFilter} />}
+            <PortsDirectoryRows rows={currentPortRows(rows, hosts)} hostFilter={hostFilter} scopeFilter={scopeFilter} stateFilter={stateFilter} />}
     </section>
   );
 }

@@ -162,6 +162,7 @@ export interface FleetPort {
   status: "online" | "offline" | "pending" | "unknown";
   sampled_at: string | null;
   tailnet: "on" | "off" | "not verified";
+  truncated: boolean;
   port: number | null;
   protocol: "tcp";
   bind: string | null;
@@ -169,7 +170,7 @@ export interface FleetPort {
   service: string | null;
   web: boolean;
   url: string | null;
-  links: { scope: "tailnet"; url: string }[];
+  links: { scope: "server-local" | "lan" | "tailnet"; url: string }[];
 }
 
 export interface HistoryPoint {

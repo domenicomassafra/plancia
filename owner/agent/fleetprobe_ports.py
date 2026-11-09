@@ -7,6 +7,7 @@ import json
 import platform
 import re
 import shutil
+import ssl
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -14,7 +15,8 @@ from urllib.parse import urlsplit
 
 from fleetprobe_support import _run, _powershell
 
-MAX_PORTS = 128
+MAX_PORTS = 256
+MAX_OBSERVED = 4096
 _TAILSCALE_BINS = (
     "tailscale", "/usr/bin/tailscale", "/usr/local/bin/tailscale",
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
@@ -30,8 +32,11 @@ def _port_row(bind: str, port: int) -> dict[str, Any]:
 def _valid_bind(value: str) -> bool:
     if value == "*":
         return True
+    address, marker, scope = value.partition("%")
+    if marker and not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", scope):
+        return False
     try:
-        ipaddress.ip_address(value.split("%", 1)[0])
+        ipaddress.ip_address(address)
         return True
     except ValueError:
         return False
@@ -47,6 +52,15 @@ def parse_tcp_listeners(output: str, system: str) -> list[dict[str, Any]]:
         entries = decoded if isinstance(decoded, list) else [decoded]
         sockets = [(str(entry.get("LocalAddress", "")), entry.get("LocalPort"))
                    for entry in entries if isinstance(entry, dict)]
+    elif system == "darwin":
+        # macOS netstat -an -p tcp can successfully return zero TCP rows in the
+        # installed execution context. lsof -Fn has one n<bind>:<port> per socket.
+        sockets = []
+        for line in output.splitlines():
+            if not line.startswith("n") or ":" not in line:
+                continue
+            bind, raw_port = line[1:].rsplit(":", 1)
+            sockets.append((bind.strip("[]"), raw_port))
     else:
         sockets = []
         for line in output.splitlines():
@@ -54,9 +68,6 @@ def parse_tcp_listeners(output: str, system: str) -> list[dict[str, Any]]:
             if system == "linux" and len(parts) >= 4 and parts[0] == "LISTEN":
                 endpoint = parts[3]
                 separator = ":"
-            elif system == "darwin" and len(parts) >= 6 and parts[0] in {"tcp4", "tcp6", "tcp"} and parts[-1] == "LISTEN":
-                endpoint = parts[3]
-                separator = "."
             else:
                 continue
             if separator not in endpoint:
@@ -74,36 +85,43 @@ def parse_tcp_listeners(output: str, system: str) -> list[dict[str, Any]]:
             continue
         rows.append(_port_row(bind, port))
         seen.add((bind, port))
-        if len(rows) >= MAX_PORTS:
+        if len(rows) >= MAX_OBSERVED:
             break
-    return sorted(rows, key=lambda entry: (entry["port"], entry["bind"]))
+    # Rank the bounded observed set before the display cap, so OS enumeration
+    # order cannot arbitrarily hide a low-numbered listening port.
+    return sorted(rows, key=lambda entry: (entry["port"], entry["bind"]))[:MAX_PORTS + 1]
 
 
-def _confirmed_http(port: int) -> bool:
+def _confirmed_http(port: int, host: str = "127.0.0.1", scheme: str = "http") -> bool:
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=0.4)
+        if scheme == "https":
+            conn = http.client.HTTPSConnection(host, port, timeout=0.25, context=ssl.create_default_context())
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=0.25)
         try:
-            conn.request("HEAD", "/", headers={"Host": "localhost"})
+            conn.request("HEAD", "/", headers={"Host": host})
             return 100 <= conn.getresponse().status < 600
         finally:
             conn.close()
-    except (OSError, http.client.HTTPException):
+    except (OSError, http.client.HTTPException, ssl.SSLError):
         return False
 
 
 def serve_web_links(
     config: dict[str, Any], status: dict[str, Any] | None,
-    *, check_http: Callable[[int], bool] = _confirmed_http,
-) -> dict[int, list[str]]:
+    *, check_http: Callable[[int, str, str], bool] | None = None,
+) -> dict[tuple[str, int], list[str]]:
     """Trust only private HTTPS root proxies to confirmed local HTTP endpoints."""
     if not isinstance(status, dict) or status.get("BackendState") != "Running":
         return {}
+    if check_http is None:
+        check_http = _confirmed_http
     if not isinstance(status.get("Self"), dict) or status["Self"].get("Online") is not True:
         return {}
     web = config.get("Web") if isinstance(config, dict) else None
     if not isinstance(web, dict):
         return {}
-    result: dict[int, list[str]] = {}
+    result: dict[tuple[str, int], list[str]] = {}
     funnel = config.get("AllowFunnel")
     deadline = time.monotonic() + 2.5
     for hostname, site in list(web.items())[:64]:
@@ -122,20 +140,42 @@ def serve_web_links(
         if not isinstance(root, dict) or not isinstance(root.get("Proxy"), str):
             continue
         proxy = urlsplit(root["Proxy"])
-        if proxy.scheme != "http" or proxy.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        if proxy.scheme not in {"http", "https"} or proxy.hostname not in {"localhost", "127.0.0.1", "::1"}:
             continue
         try:
             target_port = proxy.port
         except ValueError:
             continue
-        if not target_port or proxy.username or proxy.password or proxy.query or proxy.fragment:
+        if not target_port or proxy.username or proxy.password or proxy.query or proxy.fragment or proxy.path not in {"", "/"}:
             continue
-        if not check_http(target_port):
+        host_ip = "::1" if proxy.hostname == "::1" else "127.0.0.1"
+        if not check_http(target_port, host_ip, proxy.scheme):
             continue
         suffix = "" if int(raw_port) == 443 else f":{int(raw_port)}"
         url = f"https://{host.lower()}{suffix}"
-        result.setdefault(target_port, []).append(url)
+        result.setdefault((host_ip, target_port), []).append(url)
     return result
+
+
+def _loopback_listener(bind: str, target: str) -> bool:
+    """An HTTP proof at loopback may annotate only that socket's bind."""
+    if bind == target:
+        return True
+    return (target == "127.0.0.1" and bind in {"0.0.0.0", "*"}) or (
+        target == "::1" and bind in {"::", "*"}
+    )
+
+
+def _local_scope(bind: str) -> str | None:
+    if bind in {"127.0.0.1", "::1"}:
+        return "server-local"
+    try:
+        address = ipaddress.ip_address(bind.split("%", 1)[0])
+    except ValueError:
+        return None
+    if address.is_private and not address.is_loopback and not address.is_link_local and not address.is_unspecified:
+        return "lan"
+    return None
 
 
 def collect_ports(
@@ -148,7 +188,7 @@ def collect_ports(
     if system == "linux":
         success, output = run(["ss", "-H", "-ltn"], timeout=2.0)
     elif system == "darwin":
-        success, output = run(["netstat", "-an", "-p", "tcp"], timeout=2.0)
+        success, output = run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fn"], timeout=2.0)
     elif system == "windows":
         success, output = _powershell(
             "Get-NetTCPConnection -State Listen -ErrorAction Stop | "
@@ -156,7 +196,9 @@ def collect_ports(
         )
     else:
         success, output = False, "unsupported OS"
-    ports = parse_tcp_listeners(output, system) if success else []
+    observed = parse_tcp_listeners(output, system) if success else []
+    truncated = len(observed) > MAX_PORTS
+    ports = observed[:MAX_PORTS]
     tailnet = "not verified"
     binary = tailscale_binary or next((name for name in _TAILSCALE_BINS if shutil.which(name)), None)
     if binary:
@@ -176,11 +218,34 @@ def collect_ports(
                 except (ValueError, TypeError):
                     links = {}
                 for row in ports:
-                    urls = links.get(row["port"], [])
+                    urls = []
+                    for (loopback, port), served_urls in links.items():
+                        # An identical port on a different interface does not
+                        # prove that the other listener is this HTTP service.
+                        if row["port"] == port and _loopback_listener(row["bind"], loopback):
+                            urls.extend(served_urls)
                     if urls:
                         row["web"] = True
                         row["url"] = urls[0]
                         row["links"] = [{"scope": "tailnet", "url": url} for url in urls]
+    # Only probe sockets actually observed on this host; never scan addresses
+    # or promote a wildcard bind into a client-reachable URL.
+    deadline = time.monotonic() + 2.5
+    for row in ports:
+        if time.monotonic() >= deadline:
+            break
+        scope = _local_scope(row["bind"])
+        if scope is None:
+            continue
+        bind = row["bind"].split("%", 1)[0]
+        for scheme in ("http", "https"):
+            if time.monotonic() >= deadline:
+                break
+            if _confirmed_http(row["port"], bind, scheme):
+                bracketed = f"[{bind}]" if ":" in bind else bind
+                row["links"].append({"scope": scope, "url": f"{scheme}://{bracketed}:{row['port']}"})
+                row["web"] = True
+                break
     return {"sampled_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "ports": ports, "tailnet": tailnet,
+            "ports": ports, "tailnet": tailnet, "truncated": truncated,
             "reason": None if success else "native TCP listener inventory unavailable"}

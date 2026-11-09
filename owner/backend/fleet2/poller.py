@@ -9,6 +9,7 @@ a power state.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import math
@@ -50,6 +51,21 @@ def _finite_number(value: Any) -> bool:
     try:
         return math.isfinite(value)
     except OverflowError:
+        return False
+
+
+def _valid_port_bind(value: Any) -> bool:
+    if value == "*":
+        return True
+    if not isinstance(value, str) or len(value) > 64:
+        return False
+    ip, sep, zone = value.partition("%")
+    if sep and not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", zone):
+        return False
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
         return False
 
 
@@ -385,7 +401,7 @@ class FleetPoller:
                 "online" if view["reachable"] and not view["stale"] else "unknown"
             )
             base = {"host_id": host.id, "host_name": host.name, "status": status,
-                    "sampled_at": None, "tailnet": "not verified"}
+                    "sampled_at": None, "tailnet": "not verified", "truncated": False}
             empty = lambda: [{**base, "port": None, "bind": None, "protocol": "tcp",
                               "process": None, "service": None, "web": False, "url": None, "links": []}]
             if status != "online" or not state.url:
@@ -401,15 +417,16 @@ class FleetPoller:
                     raise ValueError("missing ports sample time")
                 base["sampled_at"] = sampled_at
                 base["tailnet"] = payload.get("tailnet") if payload.get("tailnet") in {"on", "off"} else "not verified"
+                base["truncated"] = payload.get("truncated") is True
                 rows = []
                 raw_rows = payload.get("ports")
                 if not isinstance(raw_rows, list):
                     raise ValueError("ports not a list")
-                for port in raw_rows[:128]:
+                for port in raw_rows[:256]:
                     if not isinstance(port, dict) or type(port.get("port")) is not int or not 1 <= port["port"] <= 65535:
                         continue
                     bind = port.get("bind")
-                    if not isinstance(bind, str) or not re.fullmatch(r"[0-9a-fA-F:.%*]{1,64}", bind):
+                    if not _valid_port_bind(bind):
                         continue
                     raw_url = port.get("url")
                     url = None
@@ -420,16 +437,34 @@ class FleetPoller:
                             not (parsed.username or parsed.password or parsed.query or parsed.fragment) and
                             parsed.path in {"", "/"} and (parsed.port is None or 0 < parsed.port <= 65535)):
                             url = raw_url
+                    links = [{"scope": "tailnet", "url": url}] if url else []
+                    for item in (port.get("links") or [])[:8]:
+                        if not isinstance(item, dict) or item.get("scope") not in {"server-local", "lan"}:
+                            continue
+                        raw_link = item.get("url")
+                        if not isinstance(raw_link, str) or len(raw_link) > 256:
+                            continue
+                        parsed_link = urlsplit(raw_link)
+                        if (parsed_link.scheme not in {"http", "https"} or parsed_link.hostname != bind or
+                            parsed_link.port != port["port"] or parsed_link.path not in {"", "/"} or
+                            parsed_link.username or parsed_link.password or parsed_link.query or parsed_link.fragment):
+                            continue
+                        address = ipaddress.ip_address(bind.split("%", 1)[0]) if bind != "*" else None
+                        if item["scope"] == "server-local" and address is not None and address.is_loopback:
+                            links.append({"scope": "server-local", "url": raw_link})
+                        if (item["scope"] == "lan" and address is not None and address.is_private
+                                and not address.is_loopback and not address.is_link_local):
+                            links.append({"scope": "lan", "url": raw_link})
                     rows.append({**base, "port": port["port"], "bind": bind, "protocol": "tcp",
-                                 "process": None, "service": None, "web": url is not None,
-                                 "url": url, "links": [{"scope": "tailnet", "url": url}] if url else []})
+                                 "process": None, "service": None, "web": bool(links),
+                                 "url": url, "links": links})
                 if rows:
                     return rows
             except (httpx.HTTPError, ValueError, TypeError, AttributeError):
                 pass
             return empty()
 
-        async with httpx.AsyncClient(timeout=4.0, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=12.0, headers=headers) as client:
             groups = await asyncio.gather(*(read_host(client, host) for host in self.registry.hosts))
         return [row for group in groups for row in group]
 

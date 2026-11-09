@@ -22,3 +22,17 @@ The canonical repository is `domenicomassafra/plancia`. The shared contract at `
 Run agent work, `npm ci`, builds, tests, and Playwright on Mac Studio, in an issue-specific worktree. Use `python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py worker -- <command>` for builds and tests. MiniPC (`ssh minipc`) hosts installed services and runtimes and is used for Linux/systemd verification. Under `owner/`, run the Python suite with `uv run --no-project --with-requirements requirements-dev.txt python -m pytest`; under `web/`, run `npm ci`, `npm run build`, and `npm test`, all through the launcher. Also run `git diff --check`, inspect privacy/provenance and the diff. Do not restore retired donor Rust sources.
 
 The shared contract at `~/.dstack/contracts/shared-root/AGENTS.md` owns review, merge, installation, verification and issue closure. Use the current issue for its scope and acceptance criteria. Do not commit unapproved device images, secrets, accounts, personal logs, Notion/Obsidian data, or profiles. Preserve donor provenance: `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `upstream = LumaryLabsLLC/muxin` (Apache-2.0).
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in this repo's `origin` remote, driven with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage labels, each named exactly as its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

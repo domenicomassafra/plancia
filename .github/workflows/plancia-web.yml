@@ -41,6 +41,7 @@ jobs:
       - run: npm ci --no-fund
       - run: npm run build
       - run: npm test
+      - run: node --experimental-strip-types --test tests/orca-chat-contract.test.ts
       - run: npm audit --audit-level=high
       - name: Verify release assets
         env:

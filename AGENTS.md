@@ -1,13 +1,13 @@
 # Plancia — product and repository contract
 
-The canonical repository is `domenicomassafra/plancia`. The shared contract at `~/.dstack/contracts/shared-root/AGENTS.md` and project issues also apply. The former local checkout name (`muxin`) does not establish ownership. This public repository contains the `web/` UI and the `owner/` API and FleetProbe. The Muxin donor was retired in #60; its history and Apache-2.0 attributions remain.
+The canonical repository is `domenicomassafra/plancia`. The shared contract at `~/.dstack/contracts/shared-root/AGENTS.md` and project issues also apply. The former local checkout name (`muxin`) does not establish ownership. This public repository contains the `web/` UI. The FastAPI backend and FleetProbe live in private `domenicomassafra/controlcenter:dashboard/`. The Muxin donor was retired in #60; its history and Apache-2.0 attributions remain.
 
 ## Architecture boundaries
 
 - `web/` is the React/Vite UI, with traceable provenance from `domenicomassafra/controlcenter:dashboard/web/`. Read `PRODUCT.md`, `DESIGN.md`, and `web/PROVENANCE.md` before making changes. `web/src/lib/api.ts` uses the existing *same-origin* API with authenticated sessions, CSRF cookies, WebSockets, and governed receipts. Never add browser tokens or credentials to localStorage or Vite environment variables.
 - Do not restore the retired Muxin donor; preserve its history and licenses.
-- `owner/` contains FastAPI, authentication, FleetProbe, history, writer APIs, and owner adapters moved from `domenicomassafra/controlcenter:dashboard/` in #919. ControlCenter retains general Fleet/OmniRoute policy, host inventory, and `configs/plancia/` with private inventory and host commands. Databases, credentials, vaults, sessions, and Notion data must never enter public Git.
-- `web/` and `owner/` are both sources for Plancia's immutable release; the server delivers the authenticated bundle from that same release. ControlCenter no longer hosts a competing backend/dashboard checkout. Follow `DESIGN.md` for release preparation, authenticated same-origin checks and rollback commands.
+- ControlCenter `dashboard/` owns FastAPI, authentication, FleetProbe, history, writer APIs and owner adapters. The source was published here in #919 and returned to ControlCenter on 9 November 2026. ControlCenter also owns Fleet/OmniRoute policy, host inventory, and `configs/plancia/` with private inventory and host commands. Databases, credentials, vaults, sessions, and Notion data must never enter public Git.
+- `web/` and ControlCenter `dashboard/` are the two pinned sources for Plancia's immutable release; the server delivers the authenticated bundle from that assembled release. Follow `DESIGN.md` for release preparation, authenticated same-origin checks and rollback commands.
 
 ## Concurrent change ownership
 
@@ -19,7 +19,7 @@ The canonical repository is `domenicomassafra/plancia`. The shared contract at `
 
 ## Verification and delivery
 
-Run agent work, `npm ci`, builds, tests, and Playwright on Mac Studio, in an issue-specific worktree. Use `python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py worker -- <command>` for builds and tests. MiniPC (`ssh minipc`) hosts installed services and runtimes and is used for Linux/systemd verification. Under `owner/`, run the Python suite with `uv run --no-project --with-requirements requirements-dev.txt python -m pytest`; under `web/`, run `npm ci`, `npm run build`, and `npm test`, all through the launcher. Also run `git diff --check`, inspect privacy/provenance and the diff. Do not restore retired donor Rust sources.
+Run agent work, `npm ci`, builds, tests, and Playwright on Mac Studio, in an issue-specific worktree. Use `python3 ~/.local/share/controlcenter/resource-guard/workload_launcher.py worker -- <command>` for builds and tests. MiniPC (`ssh minipc`) hosts installed services and runtimes and is used for Linux/systemd verification. Run Python tests under ControlCenter `dashboard/`; under `web/`, run `npm ci`, `npm run build`, and `npm test`, all through the launcher. Also run `git diff --check`, inspect privacy/provenance and the diff. Do not restore retired donor Rust sources.
 
 The shared contract at `~/.dstack/contracts/shared-root/AGENTS.md` owns review, merge, installation, verification and issue closure. Use the current issue for its scope and acceptance criteria. Do not commit unapproved device images, secrets, accounts, personal logs, Notion/Obsidian data, or profiles. Preserve donor provenance: `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `upstream = LumaryLabsLLC/muxin` (Apache-2.0).
 

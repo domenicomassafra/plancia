@@ -2,6 +2,7 @@ import type {
   Capabilities,
   ControlCenterSummary,
   FleetSnapshot,
+  FleetPort,
   HistoryPoint,
   OmniRouteStatus,
   ProfileFleet,
@@ -107,6 +108,7 @@ function profiles(refresh = false): Promise<ProfileFleet> {
 
 export const api = {
   fleet: () => request<FleetSnapshot>("/api/fleet"),
+  ports: () => request<FleetPort[]>("/api/v1/fleet/ports"),
   omniroute: () => request<OmniRouteStatus>("/api/omniroute"),
   history: (hostId: string, minutes = 60) =>
     request<{ points: HistoryPoint[] }>(`/api/fleet/${hostId}/history?minutes=${minutes}`),

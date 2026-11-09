@@ -155,6 +155,24 @@ export interface FleetSnapshot {
   };
 }
 
+/** Backend-projected, authenticated inventory; URL exists only with native proof. */
+export interface FleetPort {
+  host_id: string;
+  host_name: string;
+  status: "online" | "offline" | "pending" | "unknown";
+  sampled_at: string | null;
+  tailnet: "on" | "off" | "not verified";
+  truncated: boolean;
+  port: number | null;
+  protocol: "tcp";
+  bind: string | null;
+  process: string | null;
+  service: string | null;
+  web: boolean;
+  url: string | null;
+  links: { scope: "server-local" | "lan" | "tailnet"; url: string }[];
+}
+
 export interface HistoryPoint {
   t: number;
   cpu: number | null;

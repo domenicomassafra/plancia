@@ -16,7 +16,7 @@ esac
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source_agent=$(cd -- "$script_dir/.." && pwd)/fleetprobe.py
 agent_source_dir=$(dirname "$source_agent")
-agent_modules=(fleetprobe.py fleetprobe_support.py fleetprobe_linux.py fleetprobe_darwin.py fleetprobe_windows.py)
+agent_modules=(fleetprobe.py fleetprobe_support.py fleetprobe_linux.py fleetprobe_darwin.py fleetprobe_windows.py fleetprobe_ports.py)
 data_root="${XDG_DATA_HOME:-$HOME/.local/share}/controlcenter"
 state_root="${XDG_STATE_HOME:-$HOME/.local/state}/controlcenter"
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}/controlcenter"

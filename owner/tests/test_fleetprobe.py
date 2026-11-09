@@ -336,7 +336,7 @@ def test_matebook_installer_projects_and_validates_canonical_fleetprobe_agent():
 
 def test_all_installers_ship_fleetprobe_collector_modules():
     install_dir = Path(__file__).resolve().parents[1] / "agent" / "install"
-    module_names = ("fleetprobe_support.py", "fleetprobe_linux.py", "fleetprobe_darwin.py", "fleetprobe_windows.py")
+    module_names = ("fleetprobe_support.py", "fleetprobe_linux.py", "fleetprobe_darwin.py", "fleetprobe_windows.py", "fleetprobe_ports.py")
     for installer_name in ("install-linux.sh", "install-macos.sh", "install-matebook.ps1"):
         installer = (install_dir / installer_name).read_text()
         for module in module_names:

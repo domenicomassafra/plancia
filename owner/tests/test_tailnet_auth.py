@@ -351,10 +351,16 @@ class TestTailnetAuth(unittest.TestCase):
         anonymous = client.get("/api/fleet")
         self.assertEqual(anonymous.status_code, 401, anonymous.text)
 
+        anonymous_ports = client.get("/api/v1/fleet/ports")
+        self.assertEqual(anonymous_ports.status_code, 401, anonymous_ports.text)
+
         self.bootstrap(client)
         fleet = client.get("/api/fleet", headers=IDENTITY_HEADERS)
         self.assertEqual(fleet.status_code, 200, fleet.text)
         self.assertIn("hosts", fleet.json())
+        ports = client.get("/api/v1/fleet/ports", headers=IDENTITY_HEADERS)
+        self.assertEqual(ports.status_code, 200, ports.text)
+        self.assertTrue(all(not item["web"] or item["url"] for item in ports.json()))
 
         with client.websocket_connect(
             "/api/stream", headers=self.websocket_headers(client)

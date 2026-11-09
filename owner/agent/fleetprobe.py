@@ -42,6 +42,7 @@ from fleetprobe_support import _powershell as _powershell, _parse_ps_table as _p
 from fleetprobe_linux import LinuxCollector
 from fleetprobe_darwin import DarwinCollector, parse_darwin_iostat_cpu as parse_darwin_iostat_cpu
 from fleetprobe_windows import WindowsCollector
+from fleetprobe_ports import collect_ports
 
 AGENT_VERSION = "2.1.4"
 SCHEMA_VERSION = 2
@@ -228,6 +229,17 @@ class Sampler:
         self._latest: Optional[Dict[str, Any]] = None
         self._history: List[Dict[str, Any]] = []
         self._stop = threading.Event()
+        self._ports_lock = threading.Lock()
+        self._ports_cache: Optional[Dict[str, Any]] = None
+        self._ports_cached_at = 0.0
+
+    def ports(self) -> Dict[str, Any]:
+        # Separate lock: a slow platform command must never delay /metrics.
+        with self._ports_lock:
+            if self._ports_cache is None or time.monotonic() - self._ports_cached_at >= 45:
+                self._ports_cache = collect_ports()
+                self._ports_cached_at = time.monotonic()
+            return {"host_id": self.host_id, **self._ports_cache}
 
     def sample(self) -> Dict[str, Any]:
         collector = self.collector
@@ -377,6 +389,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/metrics":
             self._send(200, self.sampler.snapshot(with_history="history" in query))
+            return
+        if path == "/ports":
+            self._send(200, self.sampler.ports())
             return
         self._send(404, {"error": "not found"})
 

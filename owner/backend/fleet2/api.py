@@ -48,6 +48,10 @@ def build_router(
     async def fleet() -> Dict[str, Any]:
         return poller.snapshot()
 
+    @router.get("/v1/fleet/ports")
+    async def fleet_ports() -> list[Dict[str, Any]]:
+        return await poller.ports_snapshot()
+
     @router.get("/fleet/{host_id}/history")
     async def history(
         host_id: str, minutes: int = Query(60, ge=5, le=20160)

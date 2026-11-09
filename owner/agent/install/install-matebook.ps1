@@ -16,7 +16,7 @@ $tokenPath = Join-Path $secrets "fleetprobe-token"
 $script = Join-Path $Root "fleetprobe\fleetprobe.py"
 $sourceScript = Join-Path (Split-Path -Parent $PSScriptRoot) "fleetprobe.py"
 $sourceDir = Split-Path -Parent $sourceScript
-$agentModules = @("fleetprobe.py", "fleetprobe_support.py", "fleetprobe_linux.py", "fleetprobe_darwin.py", "fleetprobe_windows.py")
+$agentModules = @("fleetprobe.py", "fleetprobe_support.py", "fleetprobe_linux.py", "fleetprobe_darwin.py", "fleetprobe_windows.py", "fleetprobe_ports.py")
 
 if ([string]::IsNullOrWhiteSpace($Python)) {
     $pythonCommand = Get-Command pythonw.exe -ErrorAction Stop | Select-Object -First 1

@@ -8,6 +8,7 @@ import {
   getHermesSessions,
   getRemoteDesktops,
   sendHermesPrompt,
+  stageHermesFile,
   type HermesProfile,
 } from "../src/lib/agents-remoting.ts";
 import { canUseHermesInput, createHermesAttempt, sameHermesLease } from "../src/lib/hermes-input-flow.ts";
@@ -94,6 +95,40 @@ test("native send keeps the caller nonce and requires the matching gateway admis
     async <T>() => ({ source: "hermes-native", profile_id: "signor-coding", session_id: "existing_1",
       instance_id: "unexpected-gateway", authority_epoch: 12, admission_id: "admit_123", status: "queued" } as T)),
   (error: unknown) => error instanceof AdapterError && error.kind === "invalid_contract");
+});
+
+test("photo uses original nonce and original gateway admission, file/voice uses native attachment receipt", async () => {
+  const lease = { profileId: "signor-coding", sessionId: "existing_1",
+    instanceId: "native-instance-001", authorityEpoch: 12 };
+  const photo = { mime: "image/png" as const, data_url: "data:image/png;base64,aVBORw0KGgo=" };
+  const calls: { path: string; body: Record<string, unknown> }[] = [];
+  const requester = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+    calls.push({ path, body: JSON.parse(String(init.body)) });
+    return { source: "hermes-native", profile_id: lease.profileId, session_id: lease.sessionId,
+      instance_id: lease.instanceId, authority_epoch: lease.authorityEpoch,
+      admission_id: "admit_123", status: "queued", ref_text: "@file:attachments/test.m4a" } as T;
+  };
+  const admission = await sendHermesPrompt(lease, writableProfile.capabilities, "nonce_12345678",
+    "See photo", requester, photo);
+  assert.equal(admission.sessionId, lease.sessionId);
+  assert.deepEqual(calls[0].body.photo, photo);
+  assert.equal(calls[0].body.nonce, "nonce_12345678");
+  const ref = await stageHermesFile(lease, writableProfile.capabilities, "test.m4a",
+    "voice", "data:audio/mp4;base64,YXVkaW8=", requester);
+  assert.equal(ref, "@file:attachments/test.m4a");
+  assert.match(calls[1].path, /existing_1\/stage$/);
+  assert.equal(calls[1].body.authority_epoch, lease.authorityEpoch);
+  await assert.rejects(stageHermesFile(lease, writableProfile.capabilities, "../other.m4a",
+    "voice", "data:audio/mp4;base64,YXVkaW8=", requester));
+  assert.equal(calls.length, 2);
+  await assert.rejects(stageHermesFile(lease, writableProfile.capabilities, "test.txt",
+    "voice", "data:text/plain;base64,YQ==", requester));
+  await assert.rejects(stageHermesFile(lease, writableProfile.capabilities, "test.m4a", "voice",
+    "data:audio/mp4;base64,YXVkaW8=", async <T>() => ({
+      source: "hermes-native", profile_id: lease.profileId, session_id: "another-session",
+      instance_id: lease.instanceId, authority_epoch: lease.authorityEpoch,
+      ref_text: "@file:attachments/test.m4a",
+    } as T)), (error: unknown) => error instanceof AdapterError && error.kind === "invalid_contract");
 });
 
 test("Hermes inventory uses same-origin cookies and refuses non-native sources", async () => {

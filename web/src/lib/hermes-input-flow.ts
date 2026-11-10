@@ -1,7 +1,7 @@
 /** Tiny browser state helpers; Hermes itself owns session admission and deduplication. */
-import type { HermesLease, HermesProfile, HermesSession } from "./agents-remoting";
+import type { HermesLease, HermesPhoto, HermesProfile, HermesSession } from "./agents-remoting";
 
-export type HermesAttempt = { lease: HermesLease; nonce: string; text: string };
+export type HermesAttempt = { lease: HermesLease; nonce: string; text: string; photo?: HermesPhoto };
 
 const NONCE = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
 
@@ -17,9 +17,10 @@ export function sameHermesLease(first: HermesLease, second: HermesLease): boolea
 
 export function createHermesAttempt(
   lease: HermesLease, text: string, generateNonce: () => string = () => crypto.randomUUID().replaceAll("-", ""),
+  photo?: HermesPhoto,
 ): HermesAttempt {
   if (!text.trim() || text.length > 4096) throw new Error("Testo Hermes non valido");
   const nonce = generateNonce();
   if (!NONCE.test(nonce)) throw new Error("Nonce Hermes non valido");
-  return { lease, nonce, text };
+  return { lease, nonce, text, ...(photo ? { photo } : {}) };
 }

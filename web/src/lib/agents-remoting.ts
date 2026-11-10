@@ -55,6 +55,8 @@ export type HermesAdmission = HermesLease & {
   status: "queued" | "started" | "unknown" | "terminal";
 };
 
+export type HermesPhoto = { mime: "image/png" | "image/jpeg" | "image/gif" | "image/webp"; data_url: string };
+
 /** Supply the same-origin `request` from api.ts to include session and CSRF. */
 export type HermesWriteRequester = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -75,6 +77,7 @@ const MAX_SESSIONS = 20;
 const MAX_MESSAGES = 50;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const NONCE = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
+const MAX_MEDIA_DATA_URL = 4 * Math.ceil((4 * 1024 * 1024) / 3) + 128;
 
 function invalid(): never {
   throw new AdapterError("invalid_contract");
@@ -228,7 +231,7 @@ export async function attachHermesSession(
 /** Caller owns the nonce. Retry an uncertain send only with the identical nonce and text. */
 export async function sendHermesPrompt(
   lease: HermesLease, capabilities: HermesCapability, nonce: string, text: string,
-  requester: HermesWriteRequester,
+  requester: HermesWriteRequester, photo?: HermesPhoto,
 ): Promise<HermesAdmission> {
   if (capabilities.sendable !== true) throw new AdapterError("permission_denied");
   const path = `/api/v1/hermes/profiles/${safeId(lease.profileId)}/sessions/${safeId(lease.sessionId)}/send`;
@@ -236,8 +239,12 @@ export async function sendHermesPrompt(
   if (!NONCE.test(nonce)) throw new AdapterError("invalid_identifier");
   if (!Number.isSafeInteger(lease.authorityEpoch) || lease.authorityEpoch <= 0
     || typeof text !== "string" || !text.trim() || text.length > 4096) invalid();
+  if (photo && (!/^image\/(png|jpeg|gif|webp)$/.test(photo.mime)
+    || !photo.data_url.startsWith(`data:${photo.mime};base64,`)
+    || photo.data_url.length > MAX_MEDIA_DATA_URL)) invalid();
   const raw = await requester<unknown>(path, { method: "POST", body: JSON.stringify({
     instance_id: instanceId, authority_epoch: lease.authorityEpoch, nonce, text,
+    ...(photo ? { photo } : {}),
   }) });
   const body = object(raw);
   const returned = nativeLease(body, lease.profileId, lease.sessionId);
@@ -245,6 +252,29 @@ export async function sendHermesPrompt(
   const status = body.status;
   if (status !== "queued" && status !== "started" && status !== "unknown" && status !== "terminal") invalid();
   return { ...returned, admissionId: identifier(body.admission_id), status };
+}
+
+/** `file.attach` is Hermes' own session-scoped attachment writer. It returns a
+ * context reference for the next native prompt, without moving session authority. */
+export async function stageHermesFile(
+  lease: HermesLease, capabilities: HermesCapability, name: string,
+  kind: "file" | "voice", dataUrl: string, requester: HermesWriteRequester,
+): Promise<string> {
+  if (!capabilities.sendable) throw new AdapterError("permission_denied");
+  if (!name || name.length > 120 || /[\/\\\x00-\x1f]/.test(name)
+    || !/^data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,/.test(dataUrl)
+    || dataUrl.length > MAX_MEDIA_DATA_URL || (kind === "voice" && !dataUrl.startsWith("data:audio/"))) invalid();
+  const path = `/api/v1/hermes/profiles/${safeId(lease.profileId)}/sessions/${safeId(lease.sessionId)}/stage`;
+  const raw = await requester<unknown>(path, { method: "POST", body: JSON.stringify({
+    instance_id: safeId(lease.instanceId), authority_epoch: lease.authorityEpoch,
+    name, kind, data_url: dataUrl,
+  }) });
+  const result = nativeLease(raw, lease.profileId, lease.sessionId);
+  if (result.instanceId !== lease.instanceId || result.authorityEpoch !== lease.authorityEpoch) invalid();
+  const ref = object(raw).ref_text;
+  if (typeof ref !== "string" || !ref.startsWith("@file:")
+    || ref.length > 2048 || /[\r\n\x00]/.test(ref)) invalid();
+  return ref;
 }
 
 export async function getRemoteDesktops(fetcher: FetchLike = fetch, signal?: AbortSignal): Promise<{

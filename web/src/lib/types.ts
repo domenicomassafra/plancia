@@ -193,6 +193,8 @@ export interface FleetServicesSnapshot {
   available: boolean;
   reason: string | null;
   services: FleetService[];
+  total?: number;
+  truncated?: boolean;
 }
 
 export interface FleetServiceLogs {

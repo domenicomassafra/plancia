@@ -240,6 +240,12 @@ export function HostServices({ hostId, onReceiptsChanged }: { hostId: string; on
           <p className="mt-3 text-[11px] text-ink-400">
             {inventory.os} · osservato {exactTimestamp(inventory.observed_at)}
           </p>
+          {inventory.truncated && (
+            <p role="status" className="mt-2 text-xs text-signal-warn">
+              Inventario parziale: ricevuti {inventory.services.length} di {inventory.total ?? "più di 1000"} servizi.
+              La ricerca include solo i servizi ricevuti.
+            </p>
+          )}
           {!inventory.available ? (
             <p role="status" className="mt-2 rounded-lg border border-ink-700 p-3 text-xs text-ink-300">
               Inventario e controlli non disponibili: {inventory.reason || "host o adattatore non disponibile."}

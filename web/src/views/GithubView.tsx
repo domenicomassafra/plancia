@@ -48,6 +48,12 @@ export function GithubView({ active = true }: { active?: boolean }) {
   const [actionMessage, setActionMessage] = useState("");
 
   useEffect(() => {
+    if (selected && window.matchMedia("(max-width: 1279px)").matches) {
+      detailRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  }, [selected]);
+
+  useEffect(() => {
     if (!active) return;
     let cancelled = false;
     void github.repos().then((data) => {
@@ -166,7 +172,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
       </div>
 
       <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-        <div className="min-w-0 overflow-hidden rounded-xl border border-ink-800 bg-ink-900">
+        <div className={`min-w-0 overflow-hidden rounded-xl border border-ink-800 bg-ink-900 ${selected ? "order-2 xl:order-1" : ""}`}>
           <div className="flex items-center justify-between border-b border-ink-800 px-4 py-3 text-sm text-ink-300">
             <span>{listLoading ? "Caricamento…" : `${total} risultati`}</span>
             <span>Pagina {page}</span>
@@ -200,7 +206,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
           </div>
         </div>
 
-        <article ref={detailRef} aria-label="Dettaglio GitHub" className="min-w-0 overflow-hidden rounded-xl border border-ink-800 bg-ink-900 p-4 sm:p-6">
+        <article ref={detailRef} aria-label="Dettaglio GitHub" className={`min-w-0 overflow-hidden rounded-xl border border-ink-800 bg-ink-900 p-4 sm:p-6 ${selected ? "order-1 xl:order-2" : ""}`}>
           {!selected && <p className="text-sm text-ink-400">Seleziona un elemento per leggere dettagli, commenti e verifiche.</p>}
           {selected && detailLoading && <p role="status" className="text-sm text-ink-400">Caricamento dettaglio…</p>}
           {detailError && <p role="alert" className="text-sm text-red-300">{detailError}</p>}

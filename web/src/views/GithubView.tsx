@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -22,6 +22,7 @@ function CheckStatus({ status, conclusion }: { status: string; conclusion: strin
 }
 
 export function GithubView({ active = true }: { active?: boolean }) {
+  const detailRef = useRef<HTMLElement>(null);
   const [repos, setRepos] = useState<{ name: string; private: boolean }[]>([]);
   const [kind, setKind] = useState<GithubKind>("issues");
   const [state, setState] = useState<GithubState>("open");
@@ -177,7 +178,12 @@ export function GithubView({ active = true }: { active?: boolean }) {
               const picked = selected?.repo === item.repo && selected.number === item.number && selected.kind === item.kind;
               return (
                 <button type="button" key={`${item.repo}-${item.kind}-${item.number}`}
-                  onClick={() => { setSelected(item); setDetail(null); setActionError(""); setActionMessage(""); setDraft(""); }}
+                  onClick={() => {
+                    setSelected(item); setDetail(null); setActionError(""); setActionMessage(""); setDraft("");
+                    if (window.matchMedia("(max-width: 1279px)").matches) {
+                      detailRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+                    }
+                  }}
                   aria-pressed={picked} className={`w-full min-h-20 px-4 py-3 text-left hover:bg-ink-800 focus-visible:outline-2 focus-visible:outline-accent ${picked ? "bg-ink-800" : ""}`}>
                   <span className="block text-xs text-ink-400">{item.repo} #{item.number} · {item.state}</span>
                   <span className="mt-1 block break-words text-sm font-medium text-ink-100">{item.title}</span>
@@ -194,7 +200,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
           </div>
         </div>
 
-        <article aria-label="Dettaglio GitHub" className="min-w-0 overflow-hidden rounded-xl border border-ink-800 bg-ink-900 p-4 sm:p-6">
+        <article ref={detailRef} aria-label="Dettaglio GitHub" className="min-w-0 overflow-hidden rounded-xl border border-ink-800 bg-ink-900 p-4 sm:p-6">
           {!selected && <p className="text-sm text-ink-400">Seleziona un elemento per leggere dettagli, commenti e verifiche.</p>}
           {selected && detailLoading && <p role="status" className="text-sm text-ink-400">Caricamento dettaglio…</p>}
           {detailError && <p role="alert" className="text-sm text-red-300">{detailError}</p>}

@@ -13,13 +13,14 @@ import type {
 import { ActivityView } from "./views/ActivityView";
 import { AgentsSection } from "./views/AgentsSection";
 import { FleetView } from "./views/FleetView";
+import { GithubView } from "./views/GithubView";
 import { OverviewView } from "./views/OverviewView";
 import { ProfilesView } from "./views/ProfilesView";
 import { WorkspaceView } from "./views/WorkspaceView";
 
-type View = "overview" | "fleet" | "agents" | "profiles" | "workspace" | "audit";
+type View = "overview" | "fleet" | "agents" | "profiles" | "workspace" | "github" | "audit";
 
-const VIEWS = new Set<View>(["overview", "fleet", "agents", "profiles", "workspace", "audit"]);
+const VIEWS = new Set<View>(["overview", "fleet", "agents", "profiles", "workspace", "github", "audit"]);
 
 function viewFromLocation(): View {
   const candidate = window.location.hash.replace(/^#\/?/, "") as View;
@@ -32,6 +33,7 @@ const NAV_PATHS: { id: View; label: string; path: string }[] = [
   { id: "agents", label: "Agenti", path: "M9 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM17 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM4 18v-2a5 5 0 0 1 10 0v2H4ZM15 14a4 4 0 0 1 5 4h-4" },
   { id: "profiles", label: "Account", path: "M3 5h18v14H3zM3 9h18M6 7h.01M9 7h.01" },
   { id: "workspace", label: "Workspace", path: "M6 3h10l3 3v15H6zM16 3v4h4M9 11h7M9 15h7" },
+  { id: "github", label: "GitHub", path: "M9 19c-4 1-4-2-6-3m12 3c4 1 4-2 6-3M12 2a10 10 0 0 0-3 19v-5c-3 1-4-1-4-3m7-11a10 10 0 0 1 3 19v-5c3 1 4-1 4-3" },
   { id: "audit", label: "Audit", path: "M4 19h16M5 15l4-4 3 3 7-8M17 6h2v2" },
 ];
 
@@ -290,6 +292,9 @@ export default function App() {
           <section hidden={view !== "workspace"}>
             {visited.has("workspace") && <WorkspaceView active={view === "workspace"} onRefresh={loadReceipts} />}
           </section>
+          <section hidden={view !== "github"}>
+            {visited.has("github") && <GithubView active={view === "github"} />}
+          </section>
           <section hidden={view !== "audit"}>
           {visited.has("audit") && (
             <ActivityView receipts={receipts} onRefresh={loadReceipts} />
@@ -298,7 +303,7 @@ export default function App() {
         </div>
       </main>
       <nav aria-label="Navigazione principale" className="mobile-dock fixed inset-x-0 bottom-0 z-40 border-t border-ink-700 bg-ink-900 lg:hidden">
-        <div className="mobile-dock-grid mx-auto grid max-w-xl grid-cols-6 px-1">
+        <div className="mobile-dock-grid mx-auto grid max-w-xl grid-cols-7 px-1">
           {NAV.map((entry) => (
             <button
               key={entry.id}

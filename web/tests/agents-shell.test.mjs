@@ -14,7 +14,7 @@ import "./orca-orchestration-contract.test.ts";
 const directory = mkdtempSync(join(process.cwd(), "node_modules/.agents-shell-test-"));
 after(() => rmSync(directory, { recursive: true, force: true }));
 await build({
-  entryPoints: ["src/App.tsx", "src/views/AgentsSection.tsx", "src/views/RemoteDesktopView.tsx"],
+  entryPoints: ["src/App.tsx", "src/views/AgentsSection.tsx", "src/views/RemoteDesktopView.tsx", "src/views/GithubView.tsx"],
   outdir: directory,
   outbase: "src",
   bundle: true,
@@ -27,6 +27,7 @@ await build({
 const { default: App } = await import(pathToFileURL(join(directory, "App.js")).href);
 const { AgentsSection } = await import(pathToFileURL(join(directory, "views/AgentsSection.js")).href);
 const { RemoteDesktopView } = await import(pathToFileURL(join(directory, "views/RemoteDesktopView.js")).href);
+const { GithubView } = await import(pathToFileURL(join(directory, "views/GithubView.js")).href);
 
 test("Agenti integra chat Hermes/Orca e Desktop senza navigazione globale duplicata", () => {
   const html = renderToStaticMarkup(createElement(AgentsSection));
@@ -58,13 +59,24 @@ test("il caricamento Desktop resta prudente senza aprire una connessione", () =>
   assert.doesNotMatch(desktop, /<iframe|<video|<canvas/i);
 });
 
-test("App rende le chat nella voce Agenti, senza settima navigazione", () => {
+test("GitHub mostra i filtri e richiede un dettaglio selezionato prima delle azioni", () => {
+  const html = renderToStaticMarkup(createElement(GithubView));
+  assert.match(html, /aria-label="GitHub"/);
+  assert.match(html, /Tutti i repository/);
+  assert.match(html, /Pull request/);
+  assert.match(html, /Seleziona un elemento per leggere dettagli/);
+  assert.doesNotMatch(html, /Pubblica commento|Squash merge · head verificato/);
+  assert.doesNotMatch(html, /GH_PROJECT_TOKEN|GH_TOKEN|localStorage/);
+});
+
+test("App rende le chat nella voce Agenti e GitHub nella navigazione globale", () => {
   globalThis.window = { location: { hash: "#agents" } };
   const html = renderToStaticMarkup(createElement(App));
   const navs = [...html.matchAll(/<nav\b[^>]*aria-label="Navigazione principale"[^>]*>(.*?)<\/nav>/gs)];
   assert.equal(navs.length, 2, "sidebar e dock mobile");
   for (const [, content] of navs) {
-    assert.equal((content.match(/<button\b/g) ?? []).length, 6);
+    assert.equal((content.match(/<button\b/g) ?? []).length, 7);
+    assert.match(content, /GitHub/);
     assert.doesNotMatch(content, /Desktop/);
   }
   assert.match(html, /aria-label="Sezioni Agenti"/);

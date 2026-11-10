@@ -3,8 +3,9 @@ import { AgentsSignoriView } from "./AgentsSignoriView";
 import { HermesDashboardView } from "./HermesDashboardView";
 import { RemoteDesktopView } from "./RemoteDesktopView";
 import { OrcaChatPanel } from "./OrcaChatPanel";
+import { OrcaOrchestrationView } from "./OrcaOrchestrationView";
 
-type AgentsSubView = "hermes-app" | "sessions" | "orca" | "desktop";
+type AgentsSubView = "hermes-app" | "sessions" | "orca" | "runs" | "desktop";
 
 /** Authorized native agent surfaces under Plancia's existing navigation. */
 export function AgentsSection({ active = true }: { active?: boolean }) {
@@ -28,6 +29,7 @@ export function AgentsSection({ active = true }: { active?: boolean }) {
           { id: "hermes-app", label: "App Hermes" },
           { id: "sessions", label: "Cronologia redatta" },
           { id: "orca", label: "Pi · Orca" },
+          { id: "runs", label: "Run e worker" },
           { id: "desktop", label: "Desktop" },
         ] as const).map((item) => (
           <button key={item.id} type="button" aria-pressed={subView === item.id}
@@ -37,13 +39,16 @@ export function AgentsSection({ active = true }: { active?: boolean }) {
           </button>
         ))}
       </div>
-      <div id="agents-content" role="region" aria-label={subView === "hermes-app" ? "App Hermes" : subView === "sessions" ? "Cronologia Hermes" : subView === "orca" ? "Chat Orca" : "Desktop Agenti"}>
+      <div id="agents-content" role="region" aria-label={subView === "hermes-app" ? "App Hermes" : subView === "sessions" ? "Cronologia Hermes" : subView === "orca" ? "Chat Orca" : subView === "runs" ? "Run Orca" : "Desktop Agenti"}>
         {subView === "hermes-app" && <HermesDashboardView />}
         <section hidden={subView !== "sessions"} aria-label="Sessioni Hermes">
           {visited.has("sessions") && <AgentsSignoriView />}
         </section>
         <section hidden={subView !== "orca"} aria-label="Cronologia Pi e Orca">
           {visited.has("orca") && <OrcaChatPanel active={active && subView === "orca"} />}
+        </section>
+        <section hidden={subView !== "runs"} aria-label="Orchestrazione Run Orca">
+          {visited.has("runs") && <OrcaOrchestrationView active={active && subView === "runs"} />}
         </section>
         <section hidden={subView !== "desktop"} aria-label="Desktop autorizzati">
           {visited.has("desktop") && <RemoteDesktopView active={active && subView === "desktop"} />}

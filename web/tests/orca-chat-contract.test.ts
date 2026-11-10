@@ -57,6 +57,12 @@ test("Pi's native indexed session remains a search excerpt, not a fabricated tra
   assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { query: "git", host: "minipc" });
   await assert.rejects(orcaSearch("x", client), /2–120/);
   await assert.rejects(orcaSearch("git", reply({ host: "other", hits: [] })), /incompatibili/);
+  const studioCalls: string[] = [];
+  await orcaSearch("repo", async <T>(_path, init) => {
+    studioCalls.push(String(init?.body));
+    return { host: "studio", hits: [] } as T;
+  }, "studio");
+  assert.deepEqual(JSON.parse(studioCalls[0]), { query: "repo", host: "studio" });
 });
 
 test("Native send retains request and process identity across caller retries", async () => {

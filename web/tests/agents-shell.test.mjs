@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import "./orca-chat-contract.test.ts";
+import "./orca-orchestration-contract.test.ts";
 
 // Bundle the real shell and domain components without a browser session or backend.
 const directory = mkdtempSync(join(process.cwd(), "node_modules/.agents-shell-test-"));
@@ -34,11 +35,13 @@ test("Agenti integra chat Hermes/Orca e Desktop senza navigazione globale duplic
   assert.match(html, /aria-pressed="true"[^>]*>App Hermes<\/button>/);
   assert.match(html, /aria-pressed="false"[^>]*>Cronologia redatta<\/button>/);
   assert.match(html, /aria-pressed="false"[^>]*>Pi · Orca<\/button>/);
+  assert.match(html, /aria-pressed="false"[^>]*>Run e worker<\/button>/);
   assert.match(html, /aria-pressed="false"[^>]*>Desktop<\/button>/);
   assert.match(html, /role="region" aria-label="App Hermes"/);
   assert.match(html, /<section class="space-y-4" aria-label="App Hermes ufficiale">/);
   assert.match(html, /<section hidden="" aria-label="Sessioni Hermes">/);
   assert.match(html, /<section hidden="" aria-label="Cronologia Pi e Orca">/);
+  assert.match(html, /<section hidden="" aria-label="Orchestrazione Run Orca">/);
   assert.match(html, /<section hidden="" aria-label="Desktop autorizzati">/);
   assert.match(html, /Chat Hermes/);
   assert.match(html, /Verifica disponibilità/,

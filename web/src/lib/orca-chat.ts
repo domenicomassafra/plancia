@@ -24,6 +24,7 @@ const MAX_SCREEN_LENGTH = 16_000;
 type Dict = Record<string, unknown>;
 export type OrcaRequester = <T>(path: string, init?: RequestInit) => Promise<T>;
 export type OrcaAttempt = { handle: string; incarnationId: string; text: string; retryRequest: string };
+export type OrcaSearchHost = "minipc" | "studio" | "macbookair" | "matebooklinux";
 
 function record(value: unknown): Dict {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -76,13 +77,13 @@ export async function orcaScreen(terminal: Pick<OrcaTerminal, "handle" | "incarn
   return text(body.text, MAX_SCREEN_LENGTH);
 }
 
-export async function orcaSearch(query: string, request: OrcaRequester, signal?: AbortSignal): Promise<OrcaSearchHit[]> {
+export async function orcaSearch(query: string, request: OrcaRequester, host: OrcaSearchHost = "minipc", signal?: AbortSignal): Promise<OrcaSearchHit[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2 || trimmed.length > 120) throw new Error("Inserisci 2–120 caratteri");
   const body = record(await request<unknown>("/api/v1/agents/search", {
-    method: "POST", body: JSON.stringify({ query: trimmed, host: "minipc" }), signal,
+    method: "POST", body: JSON.stringify({ query: trimmed, host }), signal,
   }));
-  if (body.host !== "minipc" || !Array.isArray(body.hits) || body.hits.length > MAX_HITS) {
+  if (body.host !== host || !Array.isArray(body.hits) || body.hits.length > MAX_HITS) {
     throw new Error("Risultati Orca incompatibili");
   }
   return body.hits.map((entry: unknown): OrcaSearchHit => {

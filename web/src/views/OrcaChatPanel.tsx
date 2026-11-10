@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { orcaScreen, orcaSearch, orcaSend, orcaTerminals, type OrcaAttempt, type OrcaSearchHit, type OrcaTerminal } from "../lib/orca-chat";
+import { orcaScreen, orcaSearch, orcaSend, orcaTerminals, type OrcaAttempt, type OrcaSearchHit, type OrcaSearchHost, type OrcaTerminal } from "../lib/orca-chat";
 import { request } from "../lib/api";
 
 type Result<T> = { state: "loading" } | { state: "ready"; value: T } | { state: "error"; reason: string };
@@ -11,6 +11,7 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const [screen, setScreen] = useState<Result<string>>({ state: "loading" });
   const [query, setQuery] = useState("");
+  const [searchHost, setSearchHost] = useState<OrcaSearchHost>("minipc");
   const [hits, setHits] = useState<Result<OrcaSearchHit[]>>({ state: "ready", value: [] });
   const [selectedHit, setSelectedHit] = useState<OrcaSearchHit | null>(null);
   const [draft, setDraft] = useState("");
@@ -71,7 +72,7 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
     setHits({ state: "loading" });
     setSelectedHit(null);
     try {
-      setHits({ state: "ready", value: await orcaSearch(query, request) });
+      setHits({ state: "ready", value: await orcaSearch(query, request, searchHost) });
     } catch (error) {
       setHits({ state: "error", reason: errorText(error) });
     }
@@ -123,6 +124,13 @@ export function OrcaChatPanel({ active }: { active: boolean }) {
         </div>
         <form onSubmit={(event) => { void doSearch(event); }} className="border-t border-ink-700 p-3" aria-label="Cerca nella cronologia Orca">
           <label htmlFor="orca-chat-search" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-400">Cronologia indicizzata</label>
+          <select aria-label="Host cronologia Orca" value={searchHost} onChange={(event) => setSearchHost(event.target.value as OrcaSearchHost)}
+            className="mb-2 min-h-11 w-full rounded-lg border border-ink-700 bg-ink-950 px-3 text-sm text-ink-100">
+            <option value="minipc">MiniPC</option>
+            <option value="studio">Mac Studio</option>
+            <option value="macbookair">MacBook Air</option>
+            <option value="matebooklinux">MateBook Linux</option>
+          </select>
           <div className="flex gap-2">
             <input id="orca-chat-search" value={query} onChange={(event) => setQuery(event.target.value)} maxLength={120} placeholder="Cerca messaggi…" className="min-h-11 min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-950 px-3 text-sm text-ink-100" />
             <button className="button-secondary min-h-11" type="submit" disabled={query.trim().length < 2}>Cerca</button>

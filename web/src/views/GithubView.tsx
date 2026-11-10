@@ -179,7 +179,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
                 <button type="button" key={`${item.repo}-${item.kind}-${item.number}`}
                   onClick={() => { setSelected(item); setDetail(null); setActionError(""); setActionMessage(""); setDraft(""); }}
                   aria-pressed={picked} className={`w-full min-h-20 px-4 py-3 text-left hover:bg-ink-800 focus-visible:outline-2 focus-visible:outline-accent ${picked ? "bg-ink-800" : ""}`}>
-                  <span className="block text-xs text-ink-400">{item.repo} #{item.number} · {item.state}{item.draft ? " · bozza" : ""}</span>
+                  <span className="block text-xs text-ink-400">{item.repo} #{item.number} · {item.state}</span>
                   <span className="mt-1 block break-words text-sm font-medium text-ink-100">{item.title}</span>
                   <span className="mt-1 block text-xs text-ink-500">Aggiornata {readableDate(item.updated_at)}</span>
                 </button>

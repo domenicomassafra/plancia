@@ -29,7 +29,7 @@ const render = (rows, hostFilter = "all", scopeFilter = "all", stateFilter = "al
 test("generic listener has no web action, local-only port is not offered to remote iPad", () => {
   const html = render([row({ port: 5555, bind: "127.0.0.1" })]);
   assert.match(html, /5555/);
-  assert.match(html, /Nessun URL tailnet verificato/);
+  assert.match(html, /Nessun URL di rete verificato/);
   assert.doesNotMatch(html, /Apri|Copia link|href=/);
 });
 
@@ -68,4 +68,38 @@ test("HTTP-local and LAN addresses show their scope without an iPad navigation a
   assert.match(html, /Solo sul server/);
   assert.doesNotMatch(html, /Copia link|href=/);
   assert.match(render([row({ truncated: true })]), /Inventario parziale/);
+});
+
+test("verified LAN listener exposes a contextual link but does not promise iPad reachability", () => {
+  const html = render([row({ bind: "192.168.1.8", port: 6768, web: true,
+    links: [{ scope: "lan", url: "http://192.168.1.8:6768" }] })]);
+  assert.match(html, /Apri LAN/);
+  assert.match(html, /Copia LAN/);
+  assert.match(html, /accessibilità da iPad non verificata/);
+  assert.match(html, /href="http:\/\/192\.168\.1\.8:6768\/"/);
+});
+
+test("LAN link must match the native bind and port; forged URLs are not navigable", () => {
+  const html = render([row({ bind: "192.168.1.8", port: 6768, web: true, links: [
+    { scope: "lan", url: "https://untrusted.example:6768" },
+    { scope: "lan", url: "http://192.168.1.8:1234" },
+    { scope: "lan", url: "http://192.168.1.8:6768/?token=private" },
+  ] })]);
+  assert.doesNotMatch(html, /href=|Copia LAN|Apri LAN/);
+  assert.doesNotMatch(render([row({ bind: "203.0.113.8", port: 6768, web: true,
+    links: [{ scope: "lan", url: "http://203.0.113.8:6768" }] })]), /href=|Copia LAN|Apri LAN/);
+});
+
+test("all hosts remain visible, including the missing inventory on a fourth host", () => {
+  const hosts = [
+    { id: "studio", name: "Studio" }, { id: "minipc", name: "MiniPC" },
+    { id: "air", name: "Air" }, { id: "matebook", name: "MateBook" },
+  ];
+  const html = renderToStaticMarkup(createElement(PortsDirectoryRows, {
+    rows: [row({ port: 8000, service: "Plancia" })], hosts,
+    hostFilter: "all", scopeFilter: "all", stateFilter: "all",
+  }));
+  assert.match(html, /Plancia/);
+  for (const host of hosts) assert.match(html, new RegExp(`aria-label="${host.name}"`));
+  assert.match(html, /Inventario non disponibile per questo host/);
 });

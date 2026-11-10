@@ -3,10 +3,15 @@ import type {
   ControlCenterSummary,
   FleetSnapshot,
   FleetPort,
+  FleetServiceDispatch,
+  FleetServiceLogs,
+  FleetServicePreview,
+  FleetServicesSnapshot,
   HistoryPoint,
   OmniRouteStatus,
   ProfileFleet,
   Receipt,
+  ServiceOperation,
   WorkspaceActionItemOperationPacket,
   WorkspaceActionItemOperationApplyResult,
   WorkspaceNotion,
@@ -109,6 +114,25 @@ function profiles(refresh = false): Promise<ProfileFleet> {
 export const api = {
   fleet: () => request<FleetSnapshot>("/api/fleet"),
   ports: () => request<FleetPort[]>("/api/v1/fleet/ports"),
+  services: (hostId: string) =>
+    request<FleetServicesSnapshot>(`/api/v1/fleet/${encodeURIComponent(hostId)}/services`),
+  serviceLogs: (hostId: string, serviceId: string, cursor?: string) =>
+    request<FleetServiceLogs>(
+      `/api/v1/fleet/${encodeURIComponent(hostId)}/services/${encodeURIComponent(serviceId)}/logs?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    ),
+  previewServiceOperation: (hostId: string, serviceId: string, operation: ServiceOperation) =>
+    request<FleetServicePreview>(
+      `/api/v1/fleet/${encodeURIComponent(hostId)}/services/${encodeURIComponent(serviceId)}/${operation}/preview`,
+      { method: "POST" },
+    ),
+  dispatchServiceOperation: (hostId: string, serviceId: string, operation: ServiceOperation, idempotencyKey: string, previewReceiptId: string) =>
+    request<FleetServiceDispatch>(
+      `/api/v1/fleet/${encodeURIComponent(hostId)}/services/${encodeURIComponent(serviceId)}/${operation}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirmation: "CONFERMA", idempotency_key: idempotencyKey, preview_receipt_id: previewReceiptId }),
+      },
+    ),
   omniroute: () => request<OmniRouteStatus>("/api/omniroute"),
   history: (hostId: string, minutes = 60) =>
     request<{ points: HistoryPoint[] }>(`/api/fleet/${hostId}/history?minutes=${minutes}`),

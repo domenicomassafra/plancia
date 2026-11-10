@@ -173,6 +173,47 @@ export interface FleetPort {
   links: { scope: "server-local" | "lan" | "tailnet"; url: string }[];
 }
 
+export type ServiceOperation = "start" | "stop" | "restart";
+
+export interface FleetService {
+  id: string;
+  name: string;
+  state: string;
+  substate: string;
+  description: string;
+  can_start: boolean;
+  can_stop: boolean;
+  can_restart: boolean;
+}
+
+export interface FleetServicesSnapshot {
+  host_id: string;
+  os: string;
+  observed_at: string;
+  available: boolean;
+  reason: string | null;
+  services: FleetService[];
+}
+
+export interface FleetServiceLogs {
+  host_id: string;
+  service_id: string;
+  entries: { cursor: string; timestamp: string; message: string }[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface FleetServicePreview {
+  receipt_id: string;
+  preview: { status: "dry-run"; mutation_count: 0; requires_confirmation: true };
+}
+
+export interface FleetServiceDispatch {
+  receipt_id: string;
+  replayed: boolean;
+  outcome?: string;
+}
+
 export interface HistoryPoint {
   t: number;
   cpu: number | null;

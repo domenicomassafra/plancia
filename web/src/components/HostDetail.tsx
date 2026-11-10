@@ -19,6 +19,7 @@ import {
 import type { HistoryPoint, HostView, Receipt } from "../lib/types";
 import { DeviceImage } from "./DeviceImage";
 import { HostActions } from "./HostActions";
+import { HostServices } from "./HostServices";
 import { Meter } from "./Meter";
 import { Sparkline } from "./Sparkline";
 import { overviewHostState, showCurrentMetrics } from "../lib/overview-state";
@@ -368,6 +369,7 @@ export function HostDetail({ host, connectionOffline, receipts, onClose, onRecei
           </section>
         )}
 
+        <HostServices key={host.id} hostId={host.id} onReceiptsChanged={onReceiptsChanged} />
         <HostActions key={host.id} hostId={host.id} onReceiptsChanged={onReceiptsChanged} />
 
         {hostReceipts.length > 0 && (

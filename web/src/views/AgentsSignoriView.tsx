@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   AdapterError,
   adapterMessage,
@@ -7,8 +7,10 @@ import {
   getHermesProfiles,
   getHermesSessions,
   sendHermesPrompt,
+  stageHermesFile,
   type HermesLease,
   type HermesMessage,
+  type HermesPhoto,
   type HermesProfile,
   type HermesSession,
 } from "../lib/agents-remoting";
@@ -29,6 +31,20 @@ function hermesWriteMessage(error: unknown): string {
   return "Errore durante la comunicazione con Hermes.";
 }
 
+type HermesAttachment = { file: File; kind: "photo" | "file" | "voice" };
+const MEDIA_LIMIT = 4 * 1024 * 1024;
+const PHOTO_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+function readHermesAttachment(file: File): Promise<string> {
+  if (!file.size || file.size > MEDIA_LIMIT) throw new Error("Allegato vuoto o superiore a 4 MiB.");
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Lettura allegato fallita."));
+    reader.onerror = () => reject(new Error("Lettura allegato fallita."));
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Only mounted on a server-granted pre-existing session. Parent retains uncertain nonce across a list refresh. */
 function HermesComposer({ profile, session, pending, onPendingChange, onReadback }: {
   profile: HermesProfile; session: HermesSession; pending: HermesAttempt | null;
@@ -36,9 +52,80 @@ function HermesComposer({ profile, session, pending, onPendingChange, onReadback
 }) {
   const [lease, setLease] = useState<HermesLease | null>(null);
   const [draft, setDraft] = useState("");
+  const [attachment, setAttachment] = useState<HermesAttachment | null>(null);
+  const [recording, setRecording] = useState(false);
+  const recorder = useRef<MediaRecorder | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("Connetti al gateway nativo per scrivere nella sessione esistente.");
   const enabled = canUseHermesInput(profile, session);
+
+  useEffect(() => () => {
+    const active = recorder.current;
+    if (active && active.state !== "inactive") active.stop();
+    active?.stream.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  function selectAttachment(event: ChangeEvent<HTMLInputElement>, kind: HermesAttachment["kind"]) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    if (!file.size || file.size > MEDIA_LIMIT) {
+      setFeedback("Allegato vuoto o superiore a 4 MiB.");
+      return;
+    }
+    if (kind === "photo" && !PHOTO_MIMES.has(file.type)) {
+      setFeedback("Foto non supportata: usa PNG, JPEG, GIF o WebP.");
+      return;
+    }
+    if (kind === "voice" && !file.type.startsWith("audio/")) {
+      setFeedback("Seleziona una registrazione audio.");
+      return;
+    }
+    setAttachment({ file, kind });
+    setFeedback(`Allegato pronto: ${file.name} (${Math.ceil(file.size / 1024)} KiB).`);
+  }
+
+  async function beginRecording() {
+    if (!lease || busy || pending || recording) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setFeedback("Registrazione non supportata: scegli una nota vocale dal telefono.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]
+        .find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const media = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks: BlobPart[] = [];
+      media.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      media.onstop = () => {
+        const type = media.mimeType.split(";", 1)[0] || "audio/webm";
+        const suffix = type === "audio/mp4" ? "m4a" : "webm";
+        const file = new File(chunks, `nota-vocale.${suffix}`, { type });
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        if (file.size && file.size <= MEDIA_LIMIT) {
+          setAttachment({ file, kind: "voice" });
+          setFeedback("Nota vocale pronta. Premi «Invia a Hermes» per consegnarla.");
+        } else setFeedback("Nota vocale vuota o superiore a 4 MiB; registra un messaggio più breve.");
+      };
+      media.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        setFeedback("Registrazione non riuscita.");
+      };
+      recorder.current = media;
+      media.start();
+      setRecording(true);
+      setFeedback("Registrazione in corso; premi «Termina registrazione» quando hai finito.");
+    } catch {
+      setFeedback("Microfono non disponibile. Controlla il permesso del browser o scegli un file audio.");
+    }
+  }
+
+  function stopRecording() {
+    if (recorder.current?.state === "recording") recorder.current.stop();
+  }
 
   async function connect() {
     if (!enabled || busy) return;
@@ -60,35 +147,54 @@ function HermesComposer({ profile, session, pending, onPendingChange, onReadback
 
   async function submit(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    if (!enabled || !lease || busy) return;
+    if (!enabled || !lease || busy || recording) return;
     if (pending && !sameHermesLease(pending.lease, lease)) {
       setFeedback("Gateway o sessione cambiati: riconcilia l'invio incerto dal readback prima di proseguire.");
       return;
     }
-    let attempt: HermesAttempt;
-    try {
-      attempt = pending ?? createHermesAttempt(lease, draft);
-    } catch (error: unknown) {
-      setFeedback(error instanceof Error ? error.message : "Messaggio non valido");
-      return;
-    }
-    onPendingChange(attempt);
     setBusy(true);
+    let admissionStarted = false;
     try {
+      let attempt: HermesAttempt;
+      if (pending) attempt = pending;
+      else {
+        let content = draft.trim();
+        let photo: HermesPhoto | undefined;
+        if (attachment) {
+          const dataUrl = await readHermesAttachment(attachment.file);
+          if (attachment.kind === "photo") {
+            photo = { mime: attachment.file.type as HermesPhoto["mime"], data_url: dataUrl };
+            content ||= "Descrivi la fotografia allegata.";
+          } else {
+            const reference = await stageHermesFile(lease, profile.capabilities,
+              attachment.file.name, attachment.kind, dataUrl, request);
+            const preface = attachment.kind === "voice"
+              ? "Questa è una nota vocale. Trascrivi l'audio e rispondi al contenuto:"
+              : "Leggi il file allegato e rispondi:";
+            content = [content || preface, reference].join("\n\n");
+          }
+        }
+        attempt = createHermesAttempt(lease, content, undefined, photo);
+      }
+      onPendingChange(attempt);
+      admissionStarted = true;
       const receipt = await sendHermesPrompt(attempt.lease, profile.capabilities,
-        attempt.nonce, attempt.text, request);
+        attempt.nonce, attempt.text, request, attempt.photo);
       if (receipt.status === "unknown") {
         setFeedback("Esito incerto: il gateway non ha confermato il turno. Rileggi la sessione; «Riprova stesso invio» conserva il nonce originale.");
       } else {
         onPendingChange(null);
         setDraft("");
+        setAttachment(null);
         setFeedback(`Il gateway nativo ha registrato l'invio (${receipt.status}). Aggiorna il readback per controllarne l'esito.`);
       }
       onReadback();
     } catch (error: unknown) {
-      // The original native admission may have succeeded even when HTTP failed.
-      // Never generate a new nonce for an uncertain retry.
-      setFeedback(`Esito dell'invio incerto: ${hermesWriteMessage(error)}. Rileggi la sessione; «Riprova stesso invio» usa il nonce originale.`);
+      // An admission may have succeeded even when HTTP failed: keep its exact nonce.
+      // A stage failure before admission has no nonce to replay.
+      setFeedback(admissionStarted
+        ? `Invio da verificare: ${hermesWriteMessage(error)}. Rileggi la sessione prima di riprovare; «Riprova stesso invio» conserva il nonce.`
+        : `Allegato o messaggio non inviato: ${hermesWriteMessage(error)}. Riprova dopo aver verificato la sessione.`);
     } finally {
       setBusy(false);
     }
@@ -107,9 +213,30 @@ function HermesComposer({ profile, session, pending, onPendingChange, onReadback
         onChange={(event) => setDraft(event.target.value)} readOnly={Boolean(pending)}
         disabled={!enabled || !lease || busy} placeholder="Scrivi nella sessione nativa esistente"
         className="w-full resize-none rounded-xl border border-ink-700 bg-ink-950 p-3 text-sm text-ink-100 disabled:cursor-not-allowed disabled:text-ink-400" />
+      <div className="flex flex-wrap items-center gap-3 text-xs text-ink-300">
+        <label className="button-secondary min-h-11 cursor-pointer px-3 py-2">
+          Foto <input className="sr-only" aria-label="Allega foto Hermes" type="file" accept="image/png,image/jpeg,image/gif,image/webp"
+            disabled={!lease || busy || Boolean(pending) || recording} onChange={(event) => selectAttachment(event, "photo")} />
+        </label>
+        <label className="button-secondary min-h-11 cursor-pointer px-3 py-2">
+          File <input className="sr-only" aria-label="Allega file Hermes" type="file"
+            disabled={!lease || busy || Boolean(pending) || recording} onChange={(event) => selectAttachment(event, "file")} />
+        </label>
+        <label className="button-secondary min-h-11 cursor-pointer px-3 py-2">
+          Nota vocale <input className="sr-only" aria-label="Carica nota vocale Hermes" type="file" accept="audio/*"
+            disabled={!lease || busy || Boolean(pending) || recording} onChange={(event) => selectAttachment(event, "voice")} />
+        </label>
+        <button type="button" className="button-secondary min-h-11" disabled={!lease || busy || Boolean(pending)}
+          onClick={() => recording ? stopRecording() : void beginRecording()}>
+          {recording ? "Termina registrazione" : "Registra voce"}
+        </button>
+        {attachment && <span className="break-all">{attachment.kind === "voice" ? "Audio" : attachment.kind === "photo" ? "Foto" : "File"}: {attachment.file.name}
+          <button type="button" className="ml-2 underline" onClick={() => setAttachment(null)} disabled={busy || Boolean(pending)}>Rimuovi</button>
+        </span>}
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p role="status" className="text-xs leading-5 text-ink-400">{feedback}</p>
-        <button type="submit" disabled={!enabled || !lease || busy || (!pending && !draft.trim())}
+        <button type="submit" disabled={!enabled || !lease || busy || recording || (!pending && !draft.trim() && !attachment)}
           className="button-secondary min-h-11">{pending ? "Riprova stesso invio" : "Invia a Hermes"}</button>
       </div>
     </form>
@@ -281,7 +408,7 @@ export function AgentsSignoriView() {
                       placeholder="Invio non disponibile: il backend non ha ancora autorizzato attach e send nativi"
                       className="w-full resize-none rounded-xl border border-ink-700 bg-ink-950 p-3 text-sm text-ink-400 disabled:cursor-not-allowed" />
                   </>}
-              <p className="mt-2 text-xs leading-5 text-ink-400">Cronologia redatta da Hermes. Allegati, streaming e tool interattivi non sono disponibili in questo pannello.</p>
+              <p className="mt-2 text-xs leading-5 text-ink-400">Cronologia redatta da Hermes. Foto, file e note vocali entrano nella sessione originale attraverso il gateway nativo; limite 4 MiB per allegato.</p>
             </footer>
           </section>
         </div>

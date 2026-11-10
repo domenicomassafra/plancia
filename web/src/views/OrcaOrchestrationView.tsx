@@ -112,7 +112,7 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
 
   const start = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy || !runId) return;
+    if (busy || !runId || !detail?.run.manageable) return;
     let attempt = startAttempt;
     if (!attempt) {
       if (!worktreeId || !taskTitle.trim() || !spec.trim()) return;
@@ -138,7 +138,7 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
   };
 
   const lifecycle = async (action: "stop" | "release", dispatchId: string) => {
-    if (busy || !runId) return;
+    if (busy || !runId || !detail?.run.manageable) return;
     let attempt = lifecycleAttempt;
     if (attempt && (attempt.dispatchId !== dispatchId || attempt.action !== action)) return;
     if (!attempt) {
@@ -183,6 +183,9 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
       </label>
       {detail && <>
         <p className="text-sm leading-6 text-ink-200">{detail.run.objective}</p>
+        <p className="text-xs text-ink-300">{detail.run.manageable
+          ? "Run gestita dal coordinatore Orca di Plancia: comandi disponibili."
+          : "Run di un altro coordinatore Orca: consultazione disponibile, comandi disabilitati."}</p>
         <p className="text-xs text-ink-400">Aggiornata: {detail.run.updatedAt || "data non disponibile"} · Task: {detail.tasks.length} · Worker nella pagina: {detail.workers.length}</p>
         <div className="grid gap-4 lg:grid-cols-2">
           <section aria-label="Task Orca" className="min-w-0 rounded-xl border border-ink-700 p-3">
@@ -211,12 +214,12 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
                     <button type="button" className="button-secondary min-h-11 text-xs" disabled={reading}
                       onClick={() => { void readWorker(worker.dispatchId); }}>Leggi output</button>
                     <button type="button" className="button-secondary min-h-11 text-xs"
-                      disabled={busy || (!retrying && !activeWorker) || (lifecycleAttempt !== null && (!retrying || lifecycleAttempt.action !== "stop"))}
+                      disabled={busy || !detail.run.manageable || (!retrying && !activeWorker) || (lifecycleAttempt !== null && (!retrying || lifecycleAttempt.action !== "stop"))}
                       onClick={() => { void lifecycle("stop", worker.dispatchId); }}>
                       {retrying && lifecycleAttempt?.action === "stop" ? "Riprova stop" : "Stop"}
                     </button>
                     <button type="button" className="button-secondary min-h-11 text-xs"
-                      disabled={busy || (!retrying && !stopped) || (lifecycleAttempt !== null && (!retrying || lifecycleAttempt.action !== "release"))}
+                      disabled={busy || !detail.run.manageable || (!retrying && !stopped) || (lifecycleAttempt !== null && (!retrying || lifecycleAttempt.action !== "release"))}
                       onClick={() => { void lifecycle("release", worker.dispatchId); }}>
                       {retrying && lifecycleAttempt?.action === "release" ? "Riprova rilascio" : "Rilascia"}
                     </button>
@@ -267,7 +270,7 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
             onChange={(event) => setSpec(event.target.value)} placeholder="Leggi lo stato del servizio e restituisci la ricevuta; non modificare file." />
         </label>
         <button type="submit" className="button-secondary min-h-11"
-          disabled={busy || !runId || (!startAttempt && (!worktreeId || taskTitle.trim().length < 3 || spec.trim().length < 8))}>
+          disabled={busy || !detail?.run.manageable || (!startAttempt && (!worktreeId || taskTitle.trim().length < 3 || spec.trim().length < 8))}>
           {startAttempt ? "Riprova stesso avvio" : "Conferma e avvia"}
         </button>
         {startAttempt && <p className="text-xs text-ink-400">Tentativo ${startAttempt.retry_request}: l'esito può essere incerto. Aggiorna la Run prima di riprovare.</p>}

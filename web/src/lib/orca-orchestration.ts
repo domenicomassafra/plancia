@@ -1,7 +1,7 @@
 /** Orca's orchestration contracts, projected through Plancia's owner-only API. */
 import type { OrcaRequester, OrcaSearchHost } from "./orca-chat";
 
-export type OrcaRun = { id: string; objective: string; updatedAt: string };
+export type OrcaRun = { id: string; objective: string; updatedAt: string; manageable?: boolean };
 export type OrcaTask = { id: string; title: string; status: string };
 export type OrcaWorker = {
   dispatchId: string; taskId: string; workerState: string; dispatchStatus: string;

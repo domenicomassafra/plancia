@@ -41,7 +41,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
   const [detailError, setDetailError] = useState("");
   const [draft, setDraft] = useState("");
   const [labelChoice, setLabelChoice] = useState("");
-  const [autoMerge, setAutoMerge] = useState(true);
+  const [autoMerge, setAutoMerge] = useState(false);
   const [acting, setActing] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -241,11 +241,13 @@ export function GithubView({ active = true }: { active?: boolean }) {
                     <div className="space-y-3 rounded-lg border border-ink-700 p-3">
                       <label className="flex items-center gap-2 text-sm text-ink-300">
                         <input type="checkbox" checked={autoMerge} onChange={(event) => setAutoMerge(event.target.checked)} />
-                        Merge automatico quando i requisiti sono soddisfatti (se la PR cambia, ricontrolla l'head)
+                        Consento il merge automatico anche se un autore con accesso write pubblica commit successivi prima dell'esecuzione
                       </label>
                       <button className="button-secondary min-h-11" type="button" disabled={!!acting}
                         onClick={() => {
-                          if (!window.confirm(`Confermi squash merge della PR #${current.number} all'head ${current.head_sha?.slice(0, 12)}?`)) return;
+                          if (!window.confirm(autoMerge
+                            ? `Attenzione: GitHub può mantenere attivo il merge automatico su nuovi commit di autori con accesso write. Confermi il merge automatico della PR #${current.number} con head attuale ${current.head_sha?.slice(0, 12)}?`
+                            : `Confermi squash merge immediato della PR #${current.number} all'head ${current.head_sha?.slice(0, 12)}?`)) return;
                           void execute("merge", () => github.merge(current, current.head_sha!, autoMerge),
                             autoMerge ? "Merge automatico richiesto: controlla i requisiti GitHub." : "Merge richiesto: verifica lo stato aggiornato.");
                         }}>

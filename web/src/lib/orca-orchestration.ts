@@ -2,6 +2,7 @@
 import type { OrcaRequester, OrcaSearchHost } from "./orca-chat";
 
 export type OrcaRun = { id: string; objective: string; updatedAt: string; manageable?: boolean };
+export type OrcaRunPage = { runs: OrcaRun[]; nextCursor: string | null };
 export type OrcaTask = { id: string; title: string; status: string };
 export type OrcaWorker = {
   dispatchId: string; taskId: string; workerState: string; dispatchStatus: string;
@@ -27,13 +28,20 @@ function checkDispatch(id: string) {
   if (!DISPATCH.test(id)) throw new Error("Dispatch Orca non valido");
 }
 
-export async function orcaRuns(request: OrcaRequester): Promise<OrcaRun[]> {
-  const body = await request<{ donor: string; runs: OrcaRun[] }>("/api/v1/agents/orchestration/runs",
+export async function orcaRunPage(request: OrcaRequester, cursor?: string): Promise<OrcaRunPage> {
+  if (cursor && cursor.length > 2048) throw new Error("Cursore Run Orca non valido");
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const body = await request<{ donor: string; runs: OrcaRun[]; nextCursor?: string | null }>(
+    `/api/v1/agents/orchestration/runs${query}`,
     { cache: "no-store" });
   if (body.donor !== "orca" || !Array.isArray(body.runs) || body.runs.some((run) => !RUN.test(run.id))) {
     throw new Error("Inventario Run Orca incompatibile");
   }
-  return body.runs;
+  return { runs: body.runs, nextCursor: body.nextCursor ?? null };
+}
+
+export async function orcaRuns(request: OrcaRequester): Promise<OrcaRun[]> {
+  return (await orcaRunPage(request)).runs;
 }
 
 export async function orcaRunDetail(id: string, request: OrcaRequester, signal?: AbortSignal): Promise<OrcaRunDetail> {

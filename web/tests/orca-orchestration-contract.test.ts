@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  orcaRuns, orcaRunDetail, orcaWorktrees, orcaWorkerOutput,
+  orcaRuns, orcaRunPage, orcaRunDetail, orcaWorktrees, orcaWorkerOutput,
   orcaStartWorker, orcaWorkerLifecycle,
 } from "../src/lib/orca-orchestration.ts";
 import type { OrcaRequester } from "../src/lib/orca-chat.ts";
@@ -12,6 +12,13 @@ const reply = (body: unknown): OrcaRequester => async <T>() => body as T;
 
 test("Run inventory and detail use native identifiers and reject another Run", async () => {
   assert.equal((await orcaRuns(reply({ donor: "orca", runs: [{ id: RUN }] })))[0].id, RUN);
+  const seen: string[] = [];
+  const page = await orcaRunPage(async <T>(path) => {
+    seen.push(path);
+    return { donor: "orca", runs: [{ id: RUN }], nextCursor: "cursor-two" } as T;
+  }, "cursor-one");
+  assert.equal(seen[0], "/api/v1/agents/orchestration/runs?cursor=cursor-one");
+  assert.equal(page.nextCursor, "cursor-two");
   await assert.rejects(orcaRuns(reply({ donor: "local", runs: [] })), /incompatibile/);
   const detail = { run: { id: RUN }, tasks: [], workers: [{ dispatchId: DISPATCH }] };
   assert.equal((await orcaRunDetail(RUN, reply(detail))).workers[0].dispatchId, DISPATCH);

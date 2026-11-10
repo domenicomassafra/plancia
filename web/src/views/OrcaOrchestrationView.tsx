@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { request } from "../lib/api";
 import type { OrcaSearchHost } from "../lib/orca-chat";
 import {
-  orcaRuns, orcaRunDetail, orcaWorktrees, orcaWorkerOutput, orcaStartWorker,
+  orcaRunPage, orcaRunDetail, orcaWorktrees, orcaWorkerOutput, orcaStartWorker,
   orcaWorkerLifecycle, orcaMoreWorkers, type OrcaLifecycle, type OrcaRun, type OrcaRunDetail,
   type OrcaStart, type OrcaWorktree,
 } from "../lib/orca-orchestration";
@@ -18,6 +18,8 @@ type LifecycleAttempt = { action: "stop" | "release"; dispatchId: string; payloa
 /** A native Orca reader and command surface; task/dispatch authority remains with Orca. */
 export function OrcaOrchestrationView({ active }: { active: boolean }) {
   const [runs, setRuns] = useState<OrcaRun[]>([]);
+  const [runsCursor, setRunsCursor] = useState<string | null>(null);
+  const [runsBusy, setRunsBusy] = useState(false);
   const [runId, setRunId] = useState("");
   const [detail, setDetail] = useState<OrcaRunDetail | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -40,13 +42,32 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    orcaRuns(request).then((rows) => {
+    orcaRunPage(request).then((page) => {
       if (cancelled) return;
+      const rows = page.runs;
       setRuns(rows);
+      setRunsCursor(page.nextCursor);
       setRunId((previous) => rows.some((row) => row.id === previous) ? previous : rows[0]?.id ?? "");
     }).catch((error: unknown) => { if (!cancelled) setStatus(message(error)); });
     return () => { cancelled = true; };
   }, [active, refresh]);
+
+  const moreRuns = async () => {
+    if (!runsCursor || runsBusy) return;
+    setRunsBusy(true);
+    try {
+      const page = await orcaRunPage(request, runsCursor);
+      setRuns((current) => {
+        const known = new Set(current.map((run) => run.id));
+        return [...current, ...page.runs.filter((run) => !known.has(run.id))];
+      });
+      setRunsCursor(page.nextCursor);
+    } catch (error) {
+      setStatus(message(error));
+    } finally {
+      setRunsBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!active || !runId) return;
@@ -181,6 +202,8 @@ export function OrcaOrchestrationView({ active }: { active: boolean }) {
           {runs.map((run) => <option key={run.id} value={run.id}>{run.id} · {run.objective.slice(0, 90)}</option>)}
         </select>
       </label>
+      {runsCursor && <button type="button" className="button-secondary min-h-11 text-xs"
+        disabled={runsBusy || busy} onClick={() => { void moreRuns(); }}>Carica altre Run</button>}
       {detail && <>
         <p className="text-sm leading-6 text-ink-200">{detail.run.objective}</p>
         <p className="text-xs text-ink-300">{detail.run.manageable

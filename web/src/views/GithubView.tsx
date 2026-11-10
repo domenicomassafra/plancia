@@ -117,7 +117,9 @@ export function GithubView({ active = true }: { active?: boolean }) {
     filtersChanged(() => setQuery(searchText.trim()));
   }
 
-  const current = detail?.item;
+  const current = detail?.item && selected
+    && detail.item.repo === selected.repo && detail.item.kind === selected.kind
+    && detail.item.number === selected.number ? detail.item : null;
   return (
     <section aria-label="GitHub" className="min-w-0 space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -175,7 +177,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
               const picked = selected?.repo === item.repo && selected.number === item.number && selected.kind === item.kind;
               return (
                 <button type="button" key={`${item.repo}-${item.kind}-${item.number}`}
-                  onClick={() => { setSelected(item); setActionError(""); setActionMessage(""); setDraft(""); }}
+                  onClick={() => { setSelected(item); setDetail(null); setActionError(""); setActionMessage(""); setDraft(""); }}
                   aria-pressed={picked} className={`w-full min-h-20 px-4 py-3 text-left hover:bg-ink-800 focus-visible:outline-2 focus-visible:outline-accent ${picked ? "bg-ink-800" : ""}`}>
                   <span className="block text-xs text-ink-400">{item.repo} #{item.number} · {item.state}{item.draft ? " · bozza" : ""}</span>
                   <span className="mt-1 block break-words text-sm font-medium text-ink-100">{item.title}</span>
@@ -239,7 +241,7 @@ export function GithubView({ active = true }: { active?: boolean }) {
                     <div className="space-y-3 rounded-lg border border-ink-700 p-3">
                       <label className="flex items-center gap-2 text-sm text-ink-300">
                         <input type="checkbox" checked={autoMerge} onChange={(event) => setAutoMerge(event.target.checked)} />
-                        Abilita merge automatico quando i requisiti sono soddisfatti
+                        Merge automatico quando i requisiti sono soddisfatti (se la PR cambia, ricontrolla l'head)
                       </label>
                       <button className="button-secondary min-h-11" type="button" disabled={!!acting}
                         onClick={() => {

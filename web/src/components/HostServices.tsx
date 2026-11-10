@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { exactTimestamp } from "../lib/format";
 import type { FleetService, FleetServiceLogs, FleetServicesSnapshot, ServiceOperation } from "../lib/types";
-import { serviceOperationAllowed, servicePreviewMatches, verifiedServicePreview, type ScopedServicePreview } from "./service-controls";
+import { filterServices, pollServiceReceipt, SERVICE_PAGE_SIZE, serviceOperationAllowed, servicePreviewMatches, verifiedServicePreview, type ScopedServicePreview } from "./service-controls";
 
 const OPERATIONS: { key: ServiceOperation; label: string }[] = [
   { key: "start", label: "Avvia" },
@@ -89,7 +89,9 @@ function ServiceLogs({ hostId, serviceId }: { hostId: string; serviceId: string 
           <ol className="mt-2 divide-y divide-ink-800">
             {entries.map((entry, index) => (
               <li key={`${entry.cursor}-${index}`} className="py-2 text-xs">
-                <time className="text-[11px] text-ink-400" dateTime={entry.timestamp}>{exactTimestamp(entry.timestamp)}</time>
+                {entry.timestamp
+                  ? <time className="text-[11px] text-ink-400" dateTime={entry.timestamp}>{exactTimestamp(entry.timestamp)}</time>
+                  : <span className="text-[11px] text-ink-400">Data non disponibile</span>}
                 <p className="mt-1 whitespace-pre-wrap break-words text-ink-200">{entry.message}</p>
               </li>
             ))}
@@ -111,6 +113,8 @@ export function HostServices({ hostId, onReceiptsChanged }: { hostId: string; on
   const [loadError, setLoadError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [selectedLogs, setSelectedLogs] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(SERVICE_PAGE_SIZE);
   const [preview, setPreview] = useState<ScopedServicePreview | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,6 +154,8 @@ export function HostServices({ hostId, onReceiptsChanged }: { hostId: string; on
 
   const allowed = (service: FleetService, operation: ServiceOperation) =>
     !loading && inventory?.available === true && serviceOperationAllowed(service, operation);
+  const matchingServices = filterServices(inventory?.services ?? [], search);
+  const visibleServices = matchingServices.slice(0, visibleCount);
 
   const prepare = async (service: FleetService, operation: ServiceOperation) => {
     if (actionLock.current || !allowed(service, operation)) return;
@@ -187,12 +193,25 @@ export function HostServices({ hostId, onReceiptsChanged }: { hostId: string; on
       const dispatched = await api.dispatchServiceOperation(hostId, service.id, operation, key, preview.receiptId);
       if (!alive.current) return;
       if (!dispatched.receipt_id) throw new Error("Il server non ha restituito la ricevuta dell'operazione.");
-      setFeedback(`Operazione ${operation} ${dispatched.replayed ? "già acquisita" : "acquisita"} · ricevuta ${dispatched.receipt_id}${dispatched.outcome ? ` · esito ${dispatched.outcome}` : ""}. Verifica lo stato aggiornato qui o in Audit.`);
+      setFeedback(`Operazione ${operation} ${dispatched.replayed ? "già acquisita" : "acquisita"} · ricevuta ${dispatched.receipt_id} in esecuzione…`);
       setPreview(null);
       setConfirmation("");
       idempotencyKey.current = null;
       onReceiptsChanged();
-      setRevision((n) => n + 1);
+      const terminal = await pollServiceReceipt(
+        dispatched.receipt_id,
+        api.receipt,
+        () => new Promise((resolve) => window.setTimeout(resolve, 300)),
+        () => alive.current,
+      );
+      if (!alive.current) return;
+      if (terminal) {
+        setFeedback(`Operazione ${operation} · ricevuta ${terminal.id} · esito ${terminal.outcome}. Inventario in aggiornamento.`);
+        setRevision((n) => n + 1);
+      } else {
+        setFeedback(`Operazione ${operation} ancora in esecuzione o stato della ricevuta non verificabile · ricevuta ${dispatched.receipt_id}. Consulta Audit e aggiorna manualmente.`);
+      }
+      onReceiptsChanged();
     } catch (cause) {
       if (alive.current) setFeedback(errorText(cause));
     } finally {
@@ -228,8 +247,21 @@ export function HostServices({ hostId, onReceiptsChanged }: { hostId: string; on
           ) : inventory.services.length === 0 ? (
             <p className="mt-3 text-xs text-ink-400">Nessun servizio restituito dal server.</p>
           ) : (
-            <ul className="mt-3 space-y-3">
-              {inventory.services.map((service, index) => (
+            <>
+              <label className="mt-3 block text-xs text-ink-300" htmlFor="host-service-search">Cerca servizi per nome o ID</label>
+              <input id="host-service-search" type="search" value={search}
+                onChange={(event) => { setSearch(event.target.value); setVisibleCount(SERVICE_PAGE_SIZE); }}
+                placeholder="Nome o ID servizio"
+                className="mt-2 min-h-11 w-full rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm text-ink-200 focus-visible:outline-2 focus-visible:outline-accent" />
+              <p role="status" className="mt-2 text-xs text-ink-400">
+                Visualizzati {visibleServices.length} di {matchingServices.length} servizi
+                {matchingServices.length !== inventory.services.length ? ` (su ${inventory.services.length} totali)` : ""}.
+              </p>
+              {matchingServices.length === 0 ? (
+                <p className="mt-3 text-xs text-ink-400">Nessun servizio corrisponde alla ricerca.</p>
+              ) : (
+                <ul className="mt-3 space-y-3">
+              {visibleServices.map((service, index) => (
                 <li key={service.id} className="min-w-0 rounded-xl bg-ink-850 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -289,7 +321,16 @@ export function HostServices({ hostId, onReceiptsChanged }: { hostId: string; on
                   )}
                 </li>
               ))}
-            </ul>
+                </ul>
+              )}
+              {visibleCount < matchingServices.length && (
+                <button type="button"
+                  onClick={() => setVisibleCount((count) => count + SERVICE_PAGE_SIZE)}
+                  className="mt-3 min-h-11 w-full rounded-lg border border-ink-700 px-3 text-sm font-medium text-ink-200 focus-visible:outline-2 focus-visible:outline-accent">
+                  Mostra altri servizi
+                </button>
+              )}
+            </>
           )}
         </>
       )}

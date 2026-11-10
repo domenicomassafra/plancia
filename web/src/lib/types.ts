@@ -198,12 +198,15 @@ export interface FleetServicesSnapshot {
 export interface FleetServiceLogs {
   host_id: string;
   service_id: string;
-  entries: { cursor: string; timestamp: string; message: string }[];
+  entries: { cursor: string; timestamp: string | null; message: string }[];
   next_cursor: string | null;
   has_more: boolean;
 }
 
 export interface FleetServicePreview {
+  host_id: string;
+  service_id: string;
+  operation: ServiceOperation;
   receipt_id: string;
   preview: { status: "dry-run"; mutation_count: 0; requires_confirmation: true };
 }

@@ -1,4 +1,33 @@
-import type { FleetService, FleetServicePreview, ServiceOperation } from "../lib/types";
+import type { FleetService, FleetServicePreview, Receipt, ServiceOperation } from "../lib/types";
+
+export const SERVICE_PAGE_SIZE = 40;
+
+export function filterServices(services: FleetService[], query: string): FleetService[] {
+  const text = query.trim().toLocaleLowerCase();
+  return text ? services.filter((service) =>
+    service.name.toLocaleLowerCase().includes(text) || service.id.toLocaleLowerCase().includes(text),
+  ) : services;
+}
+
+export async function pollServiceReceipt(
+  receiptId: string,
+  read: (id: string) => Promise<{ receipt: Receipt }>,
+  pause: () => Promise<void>,
+  stillMounted: () => boolean,
+): Promise<Receipt | null> {
+  for (let attempt = 0; attempt < 30 && stillMounted(); attempt += 1) {
+    await pause();
+    if (!stillMounted()) return null;
+    try {
+      const { receipt } = await read(receiptId);
+      if (!stillMounted()) return null;
+      if (receipt.id === receiptId && receipt.outcome !== "running") return receipt;
+    } catch {
+      // A fresh receipt can briefly be unavailable while the operation is running.
+    }
+  }
+  return null;
+}
 
 export interface ScopedServicePreview {
   hostId: string;
@@ -13,7 +42,7 @@ export function serviceOperationAllowed(service: FleetService | undefined, opera
 }
 
 export function verifiedServicePreview(
-  response: FleetServicePreview & { host_id?: string; service_id?: string; operation?: string },
+  response: FleetServicePreview,
   hostId: string,
   serviceId: string,
   operation: ServiceOperation,
@@ -22,9 +51,9 @@ export function verifiedServicePreview(
     response.preview?.status === "dry-run" &&
     response.preview.mutation_count === 0 &&
     response.preview.requires_confirmation === true &&
-    (response.host_id === undefined || response.host_id === hostId) &&
-    (response.service_id === undefined || response.service_id === serviceId) &&
-    (response.operation === undefined || response.operation === operation);
+    response.host_id === hostId &&
+    response.service_id === serviceId &&
+    response.operation === operation;
 }
 
 export function servicePreviewMatches(
